@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función para verificar si el usuario es administrador
+    function isAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Reglas para la colección de usuarios (Solo el admin puede gestionarlos)
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // Solo se puede crear via Admin SDK o Cloud Functions por seguridad, o el primer admin manualmente
+    }
+
+    // Reglas para las Rifas (Configuración)
+    match /raffles/{raffleId} {
+      // Cualquiera puede ver la configuración de la rifa
+      allow read: if true;
+      // Solo el admin puede crear o modificar la configuración
+      allow write: if isAdmin();
+
+      // Reglas para los Tickets dentro de una rifa
+      match /tickets/{ticketId} {
+        // Cualquiera puede ver el estado público de los tickets
+        allow read: if true;
+        
+        // Solo el admin puede crear tickets (inicialización) o borrarlos
+        allow create, delete: if isAdmin();
+
+        // Regla para reservar (usuario público solo modifica parte pública)
+        allow update: if (
+          resource.data.status == 'disponible' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'advisor', 'updatedAt']) &&
+          request.resource.data.status == 'reservado'
+        ) || isAdmin();
+
+        // Subcolección PRIVADA para datos sensibles
+        match /private/data {
+          // Solo el admin puede leer datos privados
+          allow read: if isAdmin();
+          // Cualquiera puede crear los datos privados al reservar
+          allow create: if get(/databases/$(database)/documents/raffles/$(raffleId)/tickets/$(ticketId)).data.status == 'disponible';
+          // Solo el admin puede actualizar o borrar datos privados
+          allow update, delete: if isAdmin();
+        }
+      }
+    }
+
+    // Reglas para los Logs de Auditoría
+    match /audit_logs/{logId} {
+      // Solo el admin puede ver y escribir logs
+      allow read, write: if isAdmin();
+    }
+  }
+}
