@@ -182,7 +182,7 @@ const PublicRaffle = () => {
       >
         <form onSubmit={handleReserve} className="space-y-5">
           <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-indigo-800 text-sm font-medium">
-            Al reservar, tendrás 24 horas para enviar el comprobante de pago.
+            Al reservar, no olvides enviar el comprobante de pago para asegurar tu reserva.
           </div>
           
           <div className="space-y-4">
