@@ -5,9 +5,11 @@ import type { Ticket, AppConfig } from '../types';
 import TicketGrid from '../components/raffle/TicketGrid';
 import { RaffleHero } from '../components/raffle/RaffleHero';
 import { Toast } from '../components/common/Toast';
+import { PaymentMethods } from '../components/payment/PaymentMethods'; 
 import { useToast } from '../hooks/useToast';
 import Modal from '../components/common/Modal';
 import { AlertCircle, Phone, User, Tag, Loader2 } from 'lucide-react';
+
 
 const PublicRaffle = () => {
   const { raffleId } = useParams<{ raffleId: string }>();
@@ -106,11 +108,9 @@ const PublicRaffle = () => {
     }
   };
 
-  const pageBackground = 'min-h-screen bg-gradient-to-br from-indigo-200 via-slate-300 to-violet-300';
-
   if (initialLoading) {
     return (
-      <div className={`${pageBackground} flex items-center justify-center`}>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
       </div>
     );
@@ -118,10 +118,10 @@ const PublicRaffle = () => {
 
   if (!config) {
     return (
-      <div className={`${pageBackground} flex flex-col items-center justify-center p-6 text-center`}>
-        <AlertCircle className="w-16 h-16 text-indigo-300 mb-4" />
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <AlertCircle className="w-16 h-16 text-slate-300 mb-4" />
         <h2 className="text-2xl font-bold text-slate-900 mb-2">No hay rifas activas</h2>
-        <p className="text-slate-600 max-w-md">
+        <p className="text-slate-500 max-w-md">
           En este momento no hay ninguna rifa disponible para participar. Vuelve más tarde.
         </p>
       </div>
@@ -131,38 +131,38 @@ const PublicRaffle = () => {
   const soldCount = tickets.filter(t => t.status !== 'disponible').length;
 
   return (
-    <div className={`${pageBackground} pb-20 relative overflow-hidden`}>
-      <div className="pointer-events-none absolute -top-32 -right-32 h-[28rem] w-[28rem] rounded-full bg-indigo-400/25 blur-3xl" aria-hidden />
-      <div className="pointer-events-none absolute top-1/2 -left-40 h-80 w-80 rounded-full bg-violet-500/20 blur-3xl" aria-hidden />
-      <div className="pointer-events-none absolute bottom-0 right-1/3 h-72 w-72 rounded-full bg-purple-400/25 blur-3xl" aria-hidden />
-
+    <div className="min-h-screen bg-slate-50 pb-20">
       {/* Navbar */}
-      <nav className="bg-white/75 backdrop-blur-md border-b border-white/60 sticky top-0 z-40 px-6 py-3 flex items-center shadow-sm shadow-indigo-100/50">
-        <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent truncate">
+      <nav className="bg-white border-b border-slate-100 sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
+        <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
           {config.title}
         </h1>
+        <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100">
+          ${config.price.toLocaleString()} COP
+        </div>
       </nav>
 
-      <main className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+      <main className="max-w-6xl mx-auto px-6 pt-8">
         {/* Hero Section */}
         <RaffleHero config={config} soldCount={soldCount} />
 
         {/* Tickets Section */}
-        <section className="space-y-4 bg-white/85 backdrop-blur-sm rounded-2xl p-4 md:p-5 border border-white shadow-md shadow-slate-300/40">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <section className="space-y-8">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Selecciona tu número</h3>
-              <p className="text-slate-600 text-xs">Haz clic en un número disponible para reservarlo</p>
+              <h3 className="text-2xl font-bold text-slate-900">Selecciona tu número</h3>
+              <p className="text-slate-500">Haz clic en un número disponible para reservarlo</p>
             </div>
-            <div className="flex flex-wrap gap-4 text-xs font-bold uppercase text-slate-600">
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-slate-200 rounded shadow-sm"></div> Disponible</div>
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div> Reservado</div>
+            <div className="flex gap-4 text-xs font-bold uppercase">
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-slate-200 rounded"></div> Disponible</div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 rounded"></div> Reservado</div>
               <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded"></div> Pagado</div>
             </div>
           </div>
 
           <TicketGrid tickets={tickets} onTicketClick={handleTicketClick} />
         </section>
+        <PaymentMethods/>
       </main>
 
       {/* Toast Notifications */}
@@ -182,7 +182,7 @@ const PublicRaffle = () => {
       >
         <form onSubmit={handleReserve} className="space-y-5">
           <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-indigo-800 text-sm font-medium">
-          No olvides enviar el comprobante de pago para confirmar tu reserva.
+            Al reservar, tendrás 24 horas para enviar el comprobante de pago.
           </div>
           
           <div className="space-y-4">

@@ -21,8 +21,8 @@ import type { Ticket, TicketStatus, AppConfig } from '../types';
 const RAFFLES_COLLECTION = 'raffles';
 const AUDIT_COLLECTION = 'audit_logs';
 
-const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dgtqs26hr';
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'comprobantes_rifa';
 
 // --- CLOUDINARY SERVICES ---
 
@@ -46,13 +46,9 @@ export const uploadReceipt = async (raffleId: string, raffleTitle: string, ticke
     : `${cleanTitle}_main_${timestamp.slice(0, 8)}_${timestamp.slice(8)}`;
 
   const formData = new FormData();
-  const folder = ticketId
-    ? `rifas/comprobantes/${raffleId}`
-    : `rifas/portadas/${raffleId}`;
-
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  formData.append('folder', folder);
+  formData.append('folder', `rifas/comprobantes/${raffleId}`);
   formData.append('public_id', publicId);
 
   try {
@@ -179,7 +175,7 @@ export const reserveTicket = async (raffleId: string, ticketId: string, buyerDat
       advisor: buyerData.advisor || null,
       buyerName: buyerData.buyerName,
       hasReceipt: !!buyerData.receiptUrl,
-      receiptUrl: buyerData.receiptUrl || null,
+      receiptUrl: buyerData.receiptUrl || null, // Guardamos la URL también en la parte pública para acceso rápido
       updatedAt: Date.now()
     });
 

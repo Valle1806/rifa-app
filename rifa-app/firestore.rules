@@ -29,12 +29,12 @@ service cloud.firestore {
         // Solo el admin puede crear tickets (inicialización) o borrarlos
         allow create, delete: if isAdmin();
 
-        // Regla para reservar (usuario público solo modifica parte pública)
+        // Reserva pública sin login: disponible -> reservado (campos que escribe reserveTicket)
         allow update: if (
           resource.data.status == 'disponible' &&
+          request.resource.data.status == 'reservado' &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'advisor', 'updatedAt']) &&
-          request.resource.data.status == 'reservado'
+            .hasOnly(['status', 'advisor', 'hasReceipt', 'updatedAt', 'buyerName', 'receiptUrl'])
         ) || isAdmin();
 
         // Subcolección PRIVADA para datos sensibles

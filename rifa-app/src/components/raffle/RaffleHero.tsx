@@ -8,14 +8,16 @@ interface RaffleHeroProps {
 }
 
 export const RaffleHero: React.FC<RaffleHeroProps> = ({ config, soldCount }) => {
-  const progress = (soldCount / config.totalTickets) * 100;
+  const progress = Math.min((soldCount / config.totalTickets) * 100, 100);
 
   return (
-    <section className="bg-white/90 backdrop-blur-sm rounded-2xl p-5 md:p-6 shadow-md shadow-indigo-200/20 border border-white/80 flex flex-col md:flex-row items-center gap-5 md:gap-6 mb-5">
-      <div className="relative shrink-0 flex justify-center w-full md:w-auto">
-        <div className="absolute -inset-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur opacity-20" aria-hidden />
-        <div className="relative w-48 h-48 sm:w-52 sm:h-52 md:w-60 md:h-60 lg:w-64 lg:h-64 bg-slate-900 rounded-2xl flex items-center justify-center border-2 border-white shadow-lg overflow-hidden">
-          {config.imageUrl ? (
+    <section className="w-full bg-white rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm border border-slate-100 flex flex-col md:flex-row items-stretch gap-6 md:gap-10 mb-12 overflow-visible">
+      
+      {/* Contenedor de la Imagen - Flexible y adaptable */}
+      <div className="w-full md:w-1/2 flex flex-col justify-start relative">
+        <div className="absolute -inset-2 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl blur-lg opacity-20"></div>
+        <div className="relative bg-slate-900 rounded-2xl aspect-square w-full max-w-[320px] mx-auto md:max-w-none flex items-center justify-center border-4 border-white shadow-xl overflow-hidden">
+           {config.imageUrl ? (
             <img
               src={config.imageUrl}
               alt={config.title}
@@ -27,36 +29,39 @@ export const RaffleHero: React.FC<RaffleHeroProps> = ({ config, soldCount }) => 
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 w-full space-y-2.5 text-center md:text-left">
-        <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-          <span className="inline-block bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wide">
-            Sorteo Especial
-          </span>
-          <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-sm sm:text-base font-black border border-indigo-500 shadow-sm">
-            ${config.price.toLocaleString('es-CO')} COP
-          </span>
+      {/* Contenedor del Texto - Crecimiento vertical garantizado */}
+      <div className="w-full md:w-1/2 flex flex-col justify-between space-y-6 h-full min-w-0">
+        <div className="space-y-4">
+          <div>
+            <span className="inline-block bg-amber-100 text-amber-700 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest mb-3">
+              Sorteo Especial
+            </span>
+            {/* break-words evita que títulos larguísimos rompan la pantalla hacia los lados */}
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 leading-tight break-words">
+              {config.title}
+            </h2>
+          </div>
+
+          {/* Renderiza saltos de línea reales (\n) y ajusta su tamaño si hay mucha data */}
+          <p className="text-slate-600 text-base sm:text-lg leading-relaxed whitespace-pre-line break-words clear-both">
+            {config.description}
+          </p>
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight line-clamp-2">
-          {config.title}
-        </h2>
-
-        <p className="text-slate-600 text-sm leading-snug line-clamp-2">
-          {config.description}
-        </p>
-
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs font-bold text-slate-500">
+        {/* Sección de progreso de boletas al final del flujo */}
+        <div className="space-y-3 pt-4 md:pt-0">
+          <div className="flex justify-between text-sm font-bold text-slate-500">
             <span>Progreso de ventas</span>
-            <span>{soldCount} / {config.totalTickets}</span>
+            <span>{soldCount} / {config.totalTickets} vendidos</span>
           </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-            <div
+          <div className="h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+            <div 
               className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-1000"
               style={{ width: `${progress}%` }}
-            />
+            ></div>
           </div>
         </div>
+
       </div>
     </section>
   );

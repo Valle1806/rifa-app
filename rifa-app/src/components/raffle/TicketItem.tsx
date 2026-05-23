@@ -10,14 +10,14 @@ const TicketItem: React.FC<TicketItemProps> = ({ ticket, onClick }) => {
   const getStatusStyles = () => {
     switch (ticket.status) {
       case 'disponible':
-        return 'bg-white text-slate-700 border-slate-400 hover:border-indigo-500 hover:text-indigo-600 shadow-md shadow-slate-400/50 hover:shadow-lg hover:shadow-slate-400/60';
+        return 'bg-white text-slate-700 border-slate-200 hover:border-indigo-500 hover:text-indigo-600 shadow-sm';
       case 'reservado':
-        return 'bg-amber-100 text-amber-700 border-amber-200 cursor-not-allowed shadow-md shadow-amber-300/70';
+        return 'bg-amber-100 text-amber-700 border-amber-200 cursor-not-allowed';
       case 'pagado_transferencia':
       case 'pagado_efectivo':
-        return 'bg-emerald-500 text-white border-emerald-600 cursor-not-allowed shadow-md shadow-emerald-800/40';
+        return 'bg-emerald-500 text-white border-emerald-600 cursor-not-allowed';
       default:
-        return 'bg-slate-100 text-slate-400 border-slate-200 shadow-sm shadow-slate-300/50';
+        return 'bg-slate-100 text-slate-400 border-slate-200';
     }
   };
 
@@ -27,7 +27,7 @@ const TicketItem: React.FC<TicketItemProps> = ({ ticket, onClick }) => {
       disabled={ticket.status !== 'disponible'}
       title={ticket.buyerName ? `Comprado por: ${ticket.buyerName}` : 'Disponible'}
       className={`
-        aspect-square rounded-lg border-2 font-bold text-xs sm:text-sm transition-all duration-200 flex flex-col items-center justify-center gap-0.5
+        aspect-square rounded-xl border-2 font-bold text-lg transition-all duration-200 flex flex-col items-center justify-center gap-1
         ${getStatusStyles()}
         ${ticket.status === 'disponible' ? 'active:scale-95' : ''}
         group relative
@@ -35,7 +35,7 @@ const TicketItem: React.FC<TicketItemProps> = ({ ticket, onClick }) => {
     >
       <span>{ticket.id}</span>
       {ticket.status !== 'disponible' && (
-        <span className="text-[9px] sm:text-[10px] uppercase font-bold opacity-75">
+        <span className="text-[10px] uppercase font-bold opacity-75">
           {ticket.status === 'reservado' ? 'Reserv.' : 'Pagado'}
         </span>
       )}
