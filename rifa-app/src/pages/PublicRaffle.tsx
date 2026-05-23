@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { subscribeToTickets, reserveTicket, subscribeToRaffleConfig, getLatestRaffle, uploadReceipt } from '../services/ticketService';
+import { subscribeToTickets, reserveTicket, getRaffleConfig, getLatestRaffle, uploadReceipt } from '../services/ticketService';
 import type { Ticket, AppConfig } from '../types';
 import TicketGrid from '../components/raffle/TicketGrid';
+import { RaffleHero } from '../components/raffle/RaffleHero';
+import { Toast } from '../components/common/Toast';
+import { useToast } from '../hooks/useToast';
 import Modal from '../components/common/Modal';
-import { Smartphone, CheckCircle, AlertCircle, Phone, User, Tag, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertCircle, Phone, User, Tag, Loader2 } from 'lucide-react';
 
 const PublicRaffle = () => {
   const { raffleId } = useParams<{ raffleId: string }>();
@@ -15,48 +18,58 @@ const PublicRaffle = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({ buyerName: '', buyerPhone: '', advisor: '' });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  
+  const { toast, showToast, hideToast } = useToast();
+  
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [alert, setAlert] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
+    let active = true;
+    let unsubTickets: (() => void) | undefined;
+
     const init = async () => {
       const currentId = raffleId;
       
       if (!currentId) {
         const latest = await getLatestRaffle();
-        if (latest) {
+        if (active && latest) {
           navigate(`/r/${latest.id}`, { replace: true });
-          return;
-        } else {
+        } else if (active) {
           setInitialLoading(false);
-          return;
         }
+        return;
       }
 
-      // Subscribe to config
-      const unsubConfig = subscribeToRaffleConfig(currentId, (newConfig) => {
-        if (newConfig) {
-          setConfig(newConfig);
+      // Fetch config once (non-realtime)
+      const raffleData = await getRaffleConfig(currentId);
+      if (active && raffleData) {
+        setConfig(raffleData);
+        
+        // Subscribe to tickets with proper cleanup
+        const unsub = subscribeToTickets(currentId, (newTickets) => {
+          if (!active) return;
+          setTickets(newTickets);
           setInitialLoading(false);
+        });
+
+        if (!active) {
+          unsub();
         } else {
-          setInitialLoading(false);
-          setAlert({ message: "La rifa no existe", type: 'error' });
+          unsubTickets = unsub;
         }
-      });
-
-      // Subscribe to tickets
-      const unsubTickets = subscribeToTickets(currentId, (newTickets) => {
-        setTickets(newTickets);
-      });
-
-      return () => {
-        unsubConfig();
-        unsubTickets();
-      };
+      } else if (active) {
+        setInitialLoading(false);
+        showToast("La rifa no existe", "error");
+      }
     };
 
     init();
+
+    return () => {
+      active = false;
+      if (unsubTickets) unsubTickets();
+    };
   }, [raffleId, navigate]);
 
   const handleTicketClick = (ticket: Ticket) => {
@@ -72,7 +85,7 @@ const PublicRaffle = () => {
     try {
       let receiptUrl = '';
       if (receiptFile) {
-        receiptUrl = await uploadReceipt(config.id, selectedTicket.id, receiptFile);
+        receiptUrl = await uploadReceipt(config.id, config.title, selectedTicket.id, receiptFile);
       }
 
       await reserveTicket(config.id, selectedTicket.id, {
@@ -81,22 +94,23 @@ const PublicRaffle = () => {
         advisor: formData.advisor,
         receiptUrl: receiptUrl || undefined
       });
-      setAlert({ message: "¡Número reservado con éxito!", type: 'success' });
+      showToast("¡Número reservado con éxito!");
       setIsModalOpen(false);
       setFormData({ buyerName: '', buyerPhone: '', advisor: '' });
       setReceiptFile(null);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Error al reservar";
-      setAlert({ message: errorMessage, type: 'error' });
+      showToast(errorMessage, "error");
     } finally {
       setLoading(false);
-      setTimeout(() => setAlert(null), 5000);
     }
   };
 
+  const pageBackground = 'min-h-screen bg-gradient-to-br from-indigo-200 via-slate-300 to-violet-300';
+
   if (initialLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className={`${pageBackground} flex items-center justify-center`}>
         <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
       </div>
     );
@@ -104,10 +118,10 @@ const PublicRaffle = () => {
 
   if (!config) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <AlertCircle className="w-16 h-16 text-slate-300 mb-4" />
+      <div className={`${pageBackground} flex flex-col items-center justify-center p-6 text-center`}>
+        <AlertCircle className="w-16 h-16 text-indigo-300 mb-4" />
         <h2 className="text-2xl font-bold text-slate-900 mb-2">No hay rifas activas</h2>
-        <p className="text-slate-500 max-w-md">
+        <p className="text-slate-600 max-w-md">
           En este momento no hay ninguna rifa disponible para participar. Vuelve más tarde.
         </p>
       </div>
@@ -115,64 +129,34 @@ const PublicRaffle = () => {
   }
 
   const soldCount = tickets.filter(t => t.status !== 'disponible').length;
-  const progress = (soldCount / config.totalTickets) * 100;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className={`${pageBackground} pb-20 relative overflow-hidden`}>
+      <div className="pointer-events-none absolute -top-32 -right-32 h-[28rem] w-[28rem] rounded-full bg-indigo-400/25 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute top-1/2 -left-40 h-80 w-80 rounded-full bg-violet-500/20 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute bottom-0 right-1/3 h-72 w-72 rounded-full bg-purple-400/25 blur-3xl" aria-hidden />
+
       {/* Navbar */}
-      <nav className="bg-white border-b border-slate-100 sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+      <nav className="bg-white/75 backdrop-blur-md border-b border-white/60 sticky top-0 z-40 px-6 py-3 flex items-center shadow-sm shadow-indigo-100/50">
+        <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent truncate">
           {config.title}
         </h1>
-        <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100">
-          ${config.price.toLocaleString()} COP
-        </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto px-6 pt-8">
+      <main className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-4">
         {/* Hero Section */}
-        <section className="bg-white rounded-3xl p-6 md:p-10 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-10 mb-12">
-          <div className="w-full md:w-1/2 relative">
-            <div className="absolute -inset-2 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl blur-lg opacity-20"></div>
-            <div className="relative bg-slate-900 rounded-2xl aspect-square flex items-center justify-center border-4 border-white shadow-xl overflow-hidden">
-              <Smartphone size={120} className="text-indigo-400 animate-pulse" />
-            </div>
-          </div>
-          <div className="w-full md:w-1/2 space-y-6">
-            <span className="bg-amber-100 text-amber-700 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest">
-              Sorteo Especial
-            </span>
-            <h2 className="text-4xl md:text-5xl font-black text-slate-900 leading-tight">
-              {config.title}
-            </h2>
-            <p className="text-slate-600 text-lg leading-relaxed">
-              {config.description}
-            </p>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm font-bold text-slate-500">
-                <span>Progreso de ventas</span>
-                <span>{soldCount} / {config.totalTickets} vendidos</span>
-              </div>
-              <div className="h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                <div 
-                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-1000"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <RaffleHero config={config} soldCount={soldCount} />
 
         {/* Tickets Section */}
-        <section className="space-y-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <section className="space-y-4 bg-white/85 backdrop-blur-sm rounded-2xl p-4 md:p-5 border border-white shadow-md shadow-slate-300/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h3 className="text-2xl font-bold text-slate-900">Selecciona tu número</h3>
-              <p className="text-slate-500">Haz clic en un número disponible para reservarlo</p>
+              <h3 className="text-lg font-bold text-slate-900">Selecciona tu número</h3>
+              <p className="text-slate-600 text-xs">Haz clic en un número disponible para reservarlo</p>
             </div>
-            <div className="flex gap-4 text-xs font-bold uppercase">
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-slate-200 rounded"></div> Disponible</div>
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 rounded"></div> Reservado</div>
+            <div className="flex flex-wrap gap-4 text-xs font-bold uppercase text-slate-600">
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white border border-slate-200 rounded shadow-sm"></div> Disponible</div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-100 border border-amber-200 rounded"></div> Reservado</div>
               <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded"></div> Pagado</div>
             </div>
           </div>
@@ -181,14 +165,13 @@ const PublicRaffle = () => {
         </section>
       </main>
 
-      {/* Alert */}
-      {alert && (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 animate-bounce ${
-          alert.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800 border-rose-100'
-        }`}>
-          {alert.type === 'success' ? <CheckCircle size={20}/> : <AlertCircle size={20}/>}
-          <span className="font-bold">{alert.message}</span>
-        </div>
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={hideToast} 
+        />
       )}
 
       {/* Reservation Modal */}
@@ -199,7 +182,7 @@ const PublicRaffle = () => {
       >
         <form onSubmit={handleReserve} className="space-y-5">
           <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-indigo-800 text-sm font-medium">
-            Al reservar, tendrás 24 horas para enviar el comprobante de pago.
+          No olvides enviar el comprobante de pago para confirmar tu reserva.
           </div>
           
           <div className="space-y-4">

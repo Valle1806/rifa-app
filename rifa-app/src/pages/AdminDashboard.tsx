@@ -6,23 +6,31 @@ import {
   subscribeToTickets, 
   updateTicketStatus, 
   resetTicket, 
-  subscribeToRaffles, 
+  getRaffles, 
   createRaffle, 
   updateRaffleConfig,
   getLatestRaffle,
   getPrivateTicketData,
   deleteRaffle,
   uploadReceipt,
-  subscribeToAuditLogs
+  deleteReceipt,
+  getAuditLogs
 } from '../services/ticketService';
 import type { Ticket, TicketStatus, AdvisorStats, AppConfig } from '../types';
 import Modal from '../components/common/Modal';
 import { 
   ShieldCheck, LogOut, DollarSign, Users, Ticket as TicketIcon, 
-  Search, Edit2, RotateCcw, Plus, Settings, ChevronRight, Loader2, XCircle, Image as ImageIcon, ClipboardList
+  Search, Plus, Settings, ChevronRight, Loader2, XCircle, Image as ImageIcon
 } from 'lucide-react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
+import { StatsCard } from '../components/admin/StatsCard';
+import { AdvisorRanking } from '../components/admin/AdvisorRanking';
+import { AuditLogs } from '../components/admin/AuditLogs';
+import { TicketTable } from '../components/admin/TicketTable';
+import { Toast } from '../components/common/Toast';
+import { useToast } from '../hooks/useToast';
+import { TICKET_STATUS_OPTIONS, DIGIT_COUNT_OPTIONS, SORT_OPTIONS } from '../utils/constants';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title);
 
@@ -37,6 +45,7 @@ const AdminDashboard = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'id' | 'date'>('id');
   const [showOnlyWithReceipt, setShowOnlyWithReceipt] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   
@@ -46,58 +55,77 @@ const AdminDashboard = () => {
   const [isNewRaffleModalOpen, setIsNewRaffleModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   
+  const { toast, showToast, hideToast } = useToast();
+  
   const [editFormData, setEditFormData] = useState<Partial<Ticket>>({});
   const [newRaffleData, setNewRaffleData] = useState({ title: '', price: 50000, description: '', totalTickets: 100, digitCount: 2 });
-  const [configFormData, setConfigFormData] = useState({ title: '', price: 0, description: '' });
+  const [configFormData, setConfigFormData] = useState({ title: '', price: 0, description: '', imageUrl: '' });
+  const [pendingRaffleImage, setPendingRaffleImage] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // Subscribe to all raffles
+  // Fetch all raffles once
   useEffect(() => {
-    const unsub = subscribeToRaffles(setRaffles);
-    return () => unsub();
+    getRaffles().then(setRaffles);
   }, []);
 
   // Handle raffle selection and ticket subscription
   useEffect(() => {
+    let active = true;
+    let unsubTickets: (() => void) | undefined;
+
     const init = async () => {
       const activeId = raffleId;
 
       if (!activeId) {
         const latest = await getLatestRaffle();
-        if (latest) {
+        if (active && latest) {
           navigate(`/admin/${latest.id}`, { replace: true });
-          return;
-        } else {
+        } else if (active) {
           setInitialLoading(false);
-          return;
         }
+        return;
       }
 
       const raffle = raffles.find(r => r.id === activeId);
-      if (raffle) {
+      if (raffle && active) {
         setCurrentRaffle(raffle);
         setConfigFormData({ 
           title: raffle.title, 
           price: raffle.price, 
-          description: raffle.description 
+          description: raffle.description, 
+          imageUrl: raffle.imageUrl || ''
         });
         
-        const unsubTickets = subscribeToTickets(activeId, setTickets);
-        const unsubLogs = subscribeToAuditLogs(activeId, setAuditLogs);
-        setInitialLoading(false);
-        return () => {
-          unsubTickets();
-          unsubLogs();
-        };
-      } else if (raffles.length > 0) {
-        // If raffleId not found but raffles exist, maybe still loading or invalid ID
+        // Real-time tickets subscription with proper cleanup
+        const unsub = subscribeToTickets(activeId, (updatedTickets) => {
+          if (!active) return;
+          setTickets(updatedTickets);
+          setInitialLoading(false);
+        });
+
+        if (!active) {
+          unsub();
+        } else {
+          unsubTickets = unsub;
+        }
+
+        // Fetch logs once
+        const logs = await getAuditLogs(activeId);
+        if (active) setAuditLogs(logs);
+      } else if (raffles.length > 0 && active) {
         setInitialLoading(false);
       }
     };
 
     init();
+
+    return () => {
+      active = false;
+      if (unsubTickets) unsubTickets();
+    };
   }, [raffleId, raffles, navigate]);
 
   const stats = useMemo(() => {
@@ -128,7 +156,7 @@ const AdminDashboard = () => {
   }, [tickets, currentRaffle]);
 
   const filteredTickets = useMemo(() => {
-    return tickets.filter(t => {
+    const filtered = tickets.filter(t => {
       const matchesSearch = t.id.includes(searchTerm) || 
                           t.buyerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           t.advisor?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -136,7 +164,14 @@ const AdminDashboard = () => {
       const matchesReceipt = !showOnlyWithReceipt || t.hasReceipt;
       return matchesSearch && matchesStatus && matchesReceipt;
     });
-  }, [tickets, searchTerm, statusFilter, showOnlyWithReceipt]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'date') {
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      }
+      return a.id.localeCompare(b.id);
+    });
+  }, [tickets, searchTerm, statusFilter, showOnlyWithReceipt, sortBy]);
 
   const handleLogout = () => signOut(auth);
 
@@ -145,10 +180,16 @@ const AdminDashboard = () => {
     setLoading(true);
     try {
       const id = await createRaffle(newRaffleData);
+      if (pendingRaffleImage) {
+        const imageUrl = await uploadReceipt(id, newRaffleData.title, null, pendingRaffleImage);
+        await updateRaffleConfig(id, { imageUrl });
+      }
+      setPendingRaffleImage(null);
       setIsNewRaffleModalOpen(false);
+      showToast("¡Rifa creada con éxito!");
       navigate(`/admin/${id}`);
     } catch {
-      alert("Error al crear rifa");
+      showToast("Error al crear la rifa", "error");
     } finally {
       setLoading(false);
     }
@@ -160,9 +201,12 @@ const AdminDashboard = () => {
     setLoading(true);
     try {
       await updateRaffleConfig(currentRaffle.id, configFormData);
+      setRaffles(prev => prev.map(r => r.id === currentRaffle.id ? { ...r, ...configFormData } : r));
+      setCurrentRaffle(prev => prev ? { ...prev, ...configFormData } : null);
       setIsConfigModalOpen(false);
+      showToast("Configuración actualizada");
     } catch {
-      alert("Error al actualizar configuración");
+      showToast("Error al actualizar configuración", "error");
     } finally {
       setLoading(false);
     }
@@ -174,9 +218,10 @@ const AdminDashboard = () => {
     try {
       await deleteRaffle(currentRaffle.id);
       setIsDeleteRaffleModalOpen(false);
+      showToast("Rifa eliminada correctamente");
       navigate('/admin');
     } catch {
-      alert("Error al eliminar la rifa");
+      showToast("Error al eliminar la rifa", "error");
     } finally {
       setLoading(false);
     }
@@ -191,7 +236,7 @@ const AdminDashboard = () => {
       setEditFormData({ ...ticket, ...privateData });
       setIsEditModalOpen(true);
     } catch {
-      alert("Error al cargar datos privados");
+      showToast("Error al cargar datos del comprador", "error");
     } finally {
       setLoading(false);
     }
@@ -205,8 +250,9 @@ const AdminDashboard = () => {
       const { status, ...rest } = editFormData;
       await updateTicketStatus(currentRaffle.id, selectedTicket.id, status as TicketStatus, auth.currentUser.uid, rest);
       setIsEditModalOpen(false);
+      showToast("Ticket actualizado con éxito");
     } catch {
-      alert("Error al actualizar ticket");
+      showToast("Error al actualizar ticket", "error");
     }
   };
 
@@ -220,8 +266,9 @@ const AdminDashboard = () => {
     try {
       await resetTicket(currentRaffle.id, selectedTicket.id, auth.currentUser.uid);
       setIsResetModalOpen(false);
+      showToast("Número reseteado a disponible");
     } catch {
-      alert("Error al resetear ticket");
+      showToast("Error al resetear ticket", "error");
     }
   };
 
@@ -354,34 +401,29 @@ const AdminDashboard = () => {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl"><DollarSign size={24}/></div>
-                  <span className="text-slate-500 font-bold uppercase text-xs tracking-wider">Recaudo Real</span>
-                </div>
-                <div className="text-3xl font-black text-slate-900">${stats.revenue.toLocaleString()}</div>
-                <div className="text-xs text-slate-400 mt-1 font-bold">Solo tickets pagados</div>
-              </div>
+              <StatsCard 
+                title="Recaudo Real"
+                value={`$${stats.revenue.toLocaleString()}`}
+                subtitle="Solo tickets pagados"
+                icon={<DollarSign size={24}/>}
+                color="emerald"
+              />
 
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl"><TicketIcon size={24}/></div>
-                  <span className="text-slate-500 font-bold uppercase text-xs tracking-wider">Ventas</span>
-                </div>
-                <div className="text-3xl font-black text-slate-900">{stats.sold} / {stats.total}</div>
-                <div className="h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-indigo-500" style={{ width: `${(stats.sold/stats.total)*100}%` }}></div>
-                </div>
-              </div>
+              <StatsCard 
+                title="Ventas"
+                value={`${stats.sold} / ${stats.total}`}
+                icon={<TicketIcon size={24}/>}
+                color="indigo"
+                progress={(stats.sold/stats.total)*100}
+              />
 
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="bg-amber-100 text-amber-600 p-3 rounded-2xl"><Users size={24}/></div>
-                  <span className="text-slate-500 font-bold uppercase text-xs tracking-wider">Reservas</span>
-                </div>
-                <div className="text-3xl font-black text-slate-900">{stats.reserved}</div>
-                <div className="text-xs text-slate-400 mt-1 font-bold">Pendientes por pago</div>
-              </div>
+              <StatsCard 
+                title="Reservas"
+                value={stats.reserved}
+                subtitle="Pendientes por pago"
+                icon={<Users size={24}/>}
+                color="amber"
+              />
 
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-center">
                 <div className="w-24 h-24">
@@ -397,165 +439,67 @@ const AdminDashboard = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
               <section className="lg:col-span-2 space-y-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h2 className="text-2xl font-bold text-slate-900">Listado de Números</h2>
-                  <div className="flex gap-2">
-                    <div className="relative">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                  <h2 className="text-2xl font-black text-slate-900 whitespace-nowrap">Listado de Números</h2>
+                  
+                  <div className="flex flex-wrap items-center gap-3 w-full xl:justify-end">
+                    <div className="relative flex-1 min-w-[200px] max-w-md">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input 
                         type="text" 
-                        placeholder="Buscar..."
-                        className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64 text-sm"
+                        placeholder="Buscar por ID, nombre o asesor..."
+                        className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 w-full text-sm font-medium shadow-sm"
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                       />
                     </div>
-                    <select 
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold outline-none"
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">Todos</option>
-                  <option value="disponible">Disponibles</option>
-                  <option value="reservado">Reservados</option>
-                  <option value="pagado_transferencia">Pagado (Transf.)</option>
-                  <option value="pagado_efectivo">Pagado (Efec.)</option>
-                </select>
-                <button
-                  onClick={() => setShowOnlyWithReceipt(!showOnlyWithReceipt)}
-                  className={`px-3 py-2 rounded-xl text-sm font-bold border transition flex items-center gap-2 ${
-                    showOnlyWithReceipt 
-                      ? 'bg-indigo-600 border-indigo-600 text-white' 
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <ImageIcon size={16} />
-                  <span className="hidden md:inline">Solo Comprobantes</span>
-                </button>
-              </div>
-                </div>
 
-                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 border-b border-slate-100">
-                        <tr>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500">ID</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500">Comprador</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500">Estado</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500">Asesor</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500">Img</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase text-slate-500 text-right">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredTickets.map(ticket => (
-                          <tr key={ticket.id} className="hover:bg-slate-50 transition-colors group">
-                            <td className="px-6 py-4 font-black text-slate-900">#{ticket.id}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col">
-                                <span className="font-bold text-slate-800">{ticket.buyerName || '---'}</span>
-                                <span className="text-xs text-slate-400 font-medium">{ticket.buyerPhone || ''}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                ticket.status === 'disponible' ? 'bg-slate-100 text-slate-500' :
-                                ticket.status === 'reservado' ? 'bg-amber-100 text-amber-700' :
-                                'bg-emerald-100 text-emerald-700'
-                              }`}>
-                                {ticket.status.replace('_', ' ')}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 font-bold text-slate-600 text-sm">
-                          {ticket.advisor || '---'}
-                        </td>
-                        <td className="px-6 py-4">
-                          {ticket.hasReceipt && (
-                            <div className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg inline-block">
-                              <ImageIcon size={14} />
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => handleEditClick(ticket)}
-                                  className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition"
-                                >
-                                  <Edit2 size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => handleResetClick(ticket)}
-                                  className="p-2 hover:bg-rose-50 text-rose-600 rounded-lg transition"
-                                >
-                                  <RotateCcw size={18} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="flex flex-wrap gap-2 items-center">
+                    <select 
+                      className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none shadow-sm focus:ring-2 focus:ring-indigo-500"
+                      value={statusFilter}
+                      onChange={e => setStatusFilter(e.target.value)}
+                    >
+                      {TICKET_STATUS_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+
+                    <select 
+                      className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none shadow-sm focus:ring-2 focus:ring-indigo-500"
+                      value={sortBy}
+                      onChange={e => setSortBy(e.target.value as 'id' | 'date')}
+                    >
+                      {SORT_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+
+                    <button
+                        onClick={() => setShowOnlyWithReceipt(!showOnlyWithReceipt)}
+                        className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition flex items-center gap-2 shadow-sm ${
+                          showOnlyWithReceipt 
+                            ? 'bg-indigo-600 border-indigo-600 text-white' 
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ImageIcon size={18} />
+                        <span className="hidden sm:inline">Solo Comprobantes</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                <TicketTable 
+                  tickets={filteredTickets}
+                  onEdit={handleEditClick}
+                  onReset={handleResetClick}
+                />
               </section>
 
               <aside className="space-y-10">
-                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="font-black text-slate-900 uppercase text-sm tracking-widest">Ranking Asesores</h3>
-                  </div>
-                  <div className="space-y-4">
-                    {stats.advisors.length > 0 ? stats.advisors.map((adv, idx) => (
-                      <div key={adv.name} className="flex items-center justify-between group">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center font-black text-slate-400 text-xs">
-                            {idx + 1}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition">{adv.name}</span>
-                            <span className="text-[10px] text-slate-400 font-bold">{adv.totalSold} ventas</span>
-                          </div>
-                        </div>
-                        <div className="font-black text-slate-900 text-sm">${adv.totalRevenue.toLocaleString()}</div>
-                      </div>
-                    )) : (
-                      <div className="text-center py-8 text-slate-400 font-bold text-sm italic">
-                        Sin ventas registradas
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                {/* Audit Logs Section */}
-                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                  <div className="flex items-center gap-3 mb-6">
-                    <ClipboardList size={20} className="text-slate-400" />
-                    <h3 className="font-black text-slate-900 uppercase text-sm tracking-widest">Registros (Auditoría)</h3>
-                  </div>
-                  <div className="space-y-4 max-h-96 overflow-y-auto pr-2 scrollbar-thin">
-                    {auditLogs.length > 0 ? auditLogs.map((log) => (
-                      <div key={log.id} className="border-l-2 border-slate-100 pl-4 py-1 space-y-1">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-black uppercase text-indigo-600">Ticket #{log.ticketId}</span>
-                          <span className="text-[9px] text-slate-400 font-bold">
-                            {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-bold text-slate-700 leading-tight">
-                          {log.action === 'reset' ? '🔄 Número reseteado' : 
-                           log.action === 'status_change' ? `📝 Estado: ${log.newState.status?.replace('_', ' ')}` : 
-                           '✏️ Datos modificados'}
-                        </p>
-                      </div>
-                    )) : (
-                      <div className="text-center py-8 text-slate-400 font-bold text-xs italic">
-                        Sin actividad registrada
-                      </div>
-                    )}
-                  </div>
-                </section>
+                <AdvisorRanking advisors={stats.advisors} />
+                <AuditLogs logs={auditLogs} />
               </aside>
             </div>
           </>
@@ -565,7 +509,7 @@ const AdminDashboard = () => {
       {/* New Raffle Modal */}
       <Modal 
         isOpen={isNewRaffleModalOpen} 
-        onClose={() => setIsNewRaffleModalOpen(false)} 
+        onClose={() => { setIsNewRaffleModalOpen(false); setPendingRaffleImage(null); }} 
         title="Crear Nueva Rifa"
       >
         <form onSubmit={handleCreateRaffle} className="space-y-5">
@@ -610,9 +554,9 @@ const AdminDashboard = () => {
               value={newRaffleData.digitCount}
               onChange={e => setNewRaffleData({...newRaffleData, digitCount: parseInt(e.target.value)})}
             >
-              <option value={2}>2 Cifras (00 - 99)</option>
-              <option value={3}>3 Cifras (000 - 999)</option>
-              <option value={4}>4 Cifras (0000 - 9999)</option>
+              {DIGIT_COUNT_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
             <p className="text-[10px] text-slate-400 mt-1 italic">
               * El rango se ajustará automáticamente desde 0 hasta el total de números menos uno.
@@ -628,6 +572,34 @@ const AdminDashboard = () => {
               value={newRaffleData.description}
               onChange={e => setNewRaffleData({...newRaffleData, description: e.target.value})}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Imagen del premio (opcional)</label>
+            {pendingRaffleImage ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-slate-600 truncate flex-1">{pendingRaffleImage.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setPendingRaffleImage(null)}
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 underline shrink-0"
+                >
+                  Quitar
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) setPendingRaffleImage(file);
+                }}
+              />
+            )}
+            <p className="text-[10px] text-slate-400 mt-1 italic">
+              También puedes subirla después en Configuración de la rifa.
+            </p>
           </div>
           <button
             type="submit"
@@ -676,9 +648,78 @@ const AdminDashboard = () => {
               onChange={e => setConfigFormData({...configFormData, description: e.target.value})}
             />
           </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Imagen del premio</label>
+            {configFormData.imageUrl ? (
+              <div className="space-y-3">
+                <div className="relative aspect-square max-w-[200px] rounded-2xl overflow-hidden border border-slate-200">
+                  <img
+                    src={configFormData.imageUrl}
+                    alt="Vista previa del premio"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingImage}
+                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 disabled:opacity-50"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !currentRaffle) return;
+                    setUploadingImage(true);
+                    try {
+                      const url = await uploadReceipt(currentRaffle.id, currentRaffle.title, null, file);
+                      setConfigFormData(prev => ({ ...prev, imageUrl: url }));
+                      showToast("Imagen subida. Guarda para aplicar los cambios.");
+                    } catch {
+                      showToast("Error al subir la imagen", "error");
+                    } finally {
+                      setUploadingImage(false);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setConfigFormData(prev => ({ ...prev, imageUrl: '' }))}
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 underline"
+                >
+                  Quitar imagen
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                accept="image/*"
+                disabled={uploadingImage || !currentRaffle}
+                className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 disabled:opacity-50"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file || !currentRaffle) return;
+                  setUploadingImage(true);
+                  try {
+                    const url = await uploadReceipt(currentRaffle.id, currentRaffle.title, null, file);
+                    setConfigFormData(prev => ({ ...prev, imageUrl: url }));
+                    showToast("Imagen subida. Guarda para aplicar los cambios.");
+                  } catch {
+                    showToast("Error al subir la imagen", "error");
+                  } finally {
+                    setUploadingImage(false);
+                    e.target.value = '';
+                  }
+                }}
+              />
+            )}
+            {uploadingImage && (
+              <p className="text-xs text-indigo-600 font-bold mt-2 flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> Subiendo imagen...
+              </p>
+            )}
+          </div>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || uploadingImage}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl transition shadow-lg shadow-indigo-100 disabled:opacity-50"
           >
             {loading ? 'Guardando...' : 'Guardar Cambios'}
@@ -695,16 +736,15 @@ const AdminDashboard = () => {
         <form onSubmit={handleUpdateTicket} className="space-y-5">
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Estado</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">Estado del Ticket</label>
               <select 
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                 value={editFormData.status}
                 onChange={e => setEditFormData({...editFormData, status: e.target.value as TicketStatus})}
               >
-                <option value="disponible">Disponible</option>
-                <option value="reservado">Reservado</option>
-                <option value="pagado_transferencia">Pagado (Transferencia)</option>
-                <option value="pagado_efectivo">Pagado (Efectivo)</option>
+                {TICKET_STATUS_OPTIONS.filter(opt => opt.value !== 'all').map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -738,14 +778,34 @@ const AdminDashboard = () => {
               <label className="block text-sm font-bold text-slate-700 mb-1.5">Comprobante de Pago</label>
               {editFormData.receiptUrl ? (
                 <div className="space-y-3">
-                  <img 
-                    src={editFormData.receiptUrl} 
-                    alt="Comprobante" 
-                    className="w-full h-48 object-cover rounded-2xl border border-slate-200"
-                  />
+                  <div className="relative group">
+                    <img 
+                      src={editFormData.receiptUrl} 
+                      alt="Comprobante" 
+                      className="w-full h-64 object-contain rounded-2xl border border-slate-200 bg-slate-900"
+                    />
+                    <a 
+                      href={editFormData.receiptUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl text-white font-bold text-sm"
+                    >
+                      Click para ver completo
+                    </a>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setEditFormData({ ...editFormData, receiptUrl: '' })}
+                    onClick={async () => {
+                      if (editFormData.receiptUrl) {
+                        try {
+                          await deleteReceipt(editFormData.receiptUrl);
+                          setEditFormData({ ...editFormData, receiptUrl: '' });
+                          showToast("Comprobante eliminado");
+                        } catch {
+                          showToast("Error al eliminar el comprobante", "error");
+                        }
+                      }
+                    }}
                     className="text-xs font-bold text-rose-600 hover:text-rose-700 underline"
                   >
                     Eliminar y subir otro
@@ -761,10 +821,11 @@ const AdminDashboard = () => {
                     if (file && currentRaffle && selectedTicket) {
                       setLoading(true);
                       try {
-                        const url = await uploadReceipt(currentRaffle.id, selectedTicket.id, file);
+                        const url = await uploadReceipt(currentRaffle.id, currentRaffle.title, selectedTicket.id, file);
                         setEditFormData({ ...editFormData, receiptUrl: url });
+                        showToast("Comprobante subido correctamente");
                       } catch {
-                        alert("Error al subir imagen");
+                        showToast("Error al subir la imagen", "error");
                       } finally {
                         setLoading(false);
                       }
@@ -814,6 +875,15 @@ const AdminDashboard = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={hideToast} 
+        />
+      )}
     </div>
   );
 };

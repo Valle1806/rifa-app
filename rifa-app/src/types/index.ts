@@ -21,6 +21,7 @@ export interface AppConfig {
   description: string;
   totalTickets: number;
   digitCount: number; // Nueva propiedad para definir si es 00-99 (2) o 000-999 (3)
+  imageUrl?: string; // URL de la imagen principal del premio
   isActive: boolean;
   createdAt: number;
 }

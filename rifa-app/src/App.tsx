@@ -35,32 +35,38 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<PublicRaffle />} />
-          <Route path="/r/:raffleId" element={<PublicRaffle />} />
-          <Route path="/login" element={<Login />} />
-          <Route 
-            path="/admin" 
-            element={
+    <Router>
+      <Routes>
+        {/* Rutas Públicas - Sin AuthProvider para evitar peticiones innecesarias */}
+        <Route path="/" element={<PublicRaffle />} />
+        <Route path="/r/:raffleId" element={<PublicRaffle />} />
+        <Route path="/login" element={<Login />} />
+
+        {/* Rutas Administrativas - Con AuthProvider */}
+        <Route 
+          path="/admin" 
+          element={
+            <AuthProvider>
               <ProtectedRoute>
                 <AdminDashboard />
               </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin/:raffleId" 
-            element={
+            </AuthProvider>
+          } 
+        />
+        <Route 
+          path="/admin/:raffleId" 
+          element={
+            <AuthProvider>
               <ProtectedRoute>
                 <AdminDashboard />
               </ProtectedRoute>
-            } 
-          />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+            </AuthProvider>
+          } 
+        />
+        
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
   );
 }
 

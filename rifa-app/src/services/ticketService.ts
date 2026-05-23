@@ -15,31 +15,87 @@ import {
   where,
   limit
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db } from './firebase';
 import type { Ticket, TicketStatus, AppConfig } from '../types';
 
 const RAFFLES_COLLECTION = 'raffles';
 const AUDIT_COLLECTION = 'audit_logs';
 
-// --- RAFFLE CONFIG SERVICES ---
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-export const subscribeToRaffles = (callback: (raffles: AppConfig[]) => void) => {
-  const q = query(collection(db, RAFFLES_COLLECTION), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, (snapshot) => {
-    const raffles = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppConfig));
-    callback(raffles);
-  });
+// --- CLOUDINARY SERVICES ---
+
+export const uploadReceipt = async (raffleId: string, raffleTitle: string, ticketId: string | null, file: File): Promise<string> => {
+  const cleanTitle = raffleTitle
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Eliminar tildes
+    .replace(/[^a-z0-9]/g, "_")      // Reemplazar caracteres especiales y espacios por guiones bajos
+    .replace(/_+/g, "_")             // Evitar múltiples guiones bajos seguidos
+    .replace(/^_|_$/g, "");          // Eliminar guiones bajos al inicio o final
+
+  const now = new Date();
+  const timestamp = now.toISOString()
+    .replace(/[-T:]/g, "")           // Eliminar guiones, T y dos puntos
+    .split(".")[0];                  // Quitar milisegundos
+  
+  // Si no hay ticketId, es una imagen de la rifa, no de un ticket
+  const publicId = ticketId 
+    ? `${cleanTitle}_ticket_${ticketId}_${timestamp.slice(0, 8)}_${timestamp.slice(8)}`
+    : `${cleanTitle}_main_${timestamp.slice(0, 8)}_${timestamp.slice(8)}`;
+
+  const formData = new FormData();
+  const folder = ticketId
+    ? `rifas/comprobantes/${raffleId}`
+    : `rifas/portadas/${raffleId}`;
+
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  formData.append('folder', folder);
+  formData.append('public_id', publicId);
+
+  try {
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'Error al subir a Cloudinary');
+    }
+
+    const data = await response.json();
+    return data.secure_url;
+  } catch (error) {
+    console.error("Cloudinary Upload Error:", error);
+    throw error;
+  }
 };
 
-export const subscribeToRaffleConfig = (raffleId: string, callback: (config: AppConfig | null) => void) => {
-  return onSnapshot(doc(db, RAFFLES_COLLECTION, raffleId), (doc) => {
-    if (doc.exists()) {
-      callback({ ...doc.data(), id: doc.id } as AppConfig);
-    } else {
-      callback(null);
-    }
-  });
+export const deleteReceipt = async (url: string) => {
+  // Nota: El borrado físico en Cloudinary desde el frontend requiere firma (API Secret).
+  // Por seguridad, este método es un placeholder. La limpieza de la URL en Firestore
+  // se realiza mediante updateTicketStatus o resetTicket.
+  console.warn("Borrado físico en Cloudinary no implementado. La referencia en Firestore se gestionará por el llamador. URL:", url);
+};
+
+// --- RAFFLE CONFIG SERVICES ---
+
+export const getRaffles = async (): Promise<AppConfig[]> => {
+  const q = query(collection(db, RAFFLES_COLLECTION), orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppConfig));
+};
+
+export const getRaffleConfig = async (raffleId: string): Promise<AppConfig | null> => {
+  const docRef = doc(db, RAFFLES_COLLECTION, raffleId);
+  const snap = await getDoc(docRef);
+  return snap.exists() ? ({ ...snap.data(), id: snap.id } as AppConfig) : null;
 };
 
 export const createRaffle = async (config: Omit<AppConfig, 'id' | 'createdAt' | 'isActive'>) => {
@@ -68,6 +124,20 @@ export const deleteRaffle = async (raffleId: string) => {
   const batch = writeBatch(db);
   
   for (const ticketDoc of ticketsSnap.docs) {
+    const ticketData = ticketDoc.data() as Ticket;
+    
+    // Si tiene comprobante, intentar borrarlo de Storage
+    if (ticketData.hasReceipt) {
+      const privateRef = doc(db, RAFFLES_COLLECTION, raffleId, 'tickets', ticketDoc.id, 'private', 'data');
+      const privateSnap = await getDoc(privateRef);
+      if (privateSnap.exists()) {
+        const privateData = privateSnap.data();
+        if (privateData.receiptUrl) {
+          await deleteReceipt(privateData.receiptUrl);
+        }
+      }
+    }
+
     const privateRef = doc(db, RAFFLES_COLLECTION, raffleId, 'tickets', ticketDoc.id, 'private', 'data');
     batch.delete(privateRef);
     batch.delete(ticketDoc.ref);
@@ -75,19 +145,6 @@ export const deleteRaffle = async (raffleId: string) => {
   
   batch.delete(raffleRef);
   await batch.commit();
-};
-
-// --- STORAGE SERVICES ---
-
-export const uploadReceipt = async (raffleId: string, ticketId: string, file: File): Promise<string> => {
-  const storageRef = ref(storage, `receipts/${raffleId}/${ticketId}_${Date.now()}`);
-  await uploadBytes(storageRef, file);
-  return getDownloadURL(storageRef);
-};
-
-export const deleteReceipt = async (url: string) => {
-  const storageRef = ref(storage, url);
-  await deleteObject(storageRef);
 };
 
 // --- TICKET SERVICES ---
@@ -122,6 +179,7 @@ export const reserveTicket = async (raffleId: string, ticketId: string, buyerDat
       advisor: buyerData.advisor || null,
       buyerName: buyerData.buyerName,
       hasReceipt: !!buyerData.receiptUrl,
+      receiptUrl: buyerData.receiptUrl || null,
       updatedAt: Date.now()
     });
 
@@ -153,6 +211,7 @@ export const updateTicketStatus = async (
     status: newStatus,
     advisor: advisor || oldData.advisor || null,
     buyerName: buyerName || oldData.buyerName || null,
+    receiptUrl: receiptUrl !== undefined ? (receiptUrl || null) : (oldData.receiptUrl || null),
     updatedAt: Date.now(),
     updatedBy: adminId
   };
@@ -190,11 +249,20 @@ export const resetTicket = async (raffleId: string, ticketId: string, adminId: s
   const ticketDoc = await getDoc(ticketRef);
   const oldData = ticketDoc.data() as Ticket;
 
+  const privateDoc = await getDoc(privateRef);
+  if (privateDoc.exists()) {
+    const privateData = privateDoc.data();
+    if (privateData.receiptUrl) {
+      await deleteReceipt(privateData.receiptUrl);
+    }
+  }
+
   await updateDoc(ticketRef, {
     status: 'disponible',
     advisor: null,
     buyerName: null,
     hasReceipt: false,
+    receiptUrl: null,
     updatedAt: Date.now(),
     updatedBy: adminId
   });
@@ -214,17 +282,25 @@ export const resetTicket = async (raffleId: string, ticketId: string, adminId: s
 
 export const initializeTickets = async (raffleId: string, count: number, digitCount: number) => {
   const ticketsCol = collection(db, RAFFLES_COLLECTION, raffleId, 'tickets');
-  const batch = [];
-  for (let i = 0; i < count; i++) {
-    const id = i.toString().padStart(digitCount, '0');
-    batch.push(setDoc(doc(ticketsCol, id), {
-      id,
-      status: 'disponible',
-      hasReceipt: false,
-      updatedAt: Date.now()
-    }));
+  
+  // Usar lotes (batches) de 500 (límite de Firestore)
+  const batchSize = 500;
+  for (let i = 0; i < count; i += batchSize) {
+    const batch = writeBatch(db);
+    const chunk = Math.min(count, i + batchSize);
+    
+    for (let j = i; j < chunk; j++) {
+      const id = j.toString().padStart(digitCount, '0');
+      const ticketRef = doc(ticketsCol, id);
+      batch.set(ticketRef, {
+        id,
+        status: 'disponible',
+        hasReceipt: false,
+        updatedAt: Date.now()
+      });
+    }
+    await batch.commit();
   }
-  await Promise.all(batch);
 };
 
 export const getLatestRaffle = async (): Promise<AppConfig | null> => {
@@ -234,15 +310,13 @@ export const getLatestRaffle = async (): Promise<AppConfig | null> => {
   return { ...snapshot.docs[0].data(), id: snapshot.docs[0].id } as AppConfig;
 };
 
-export const subscribeToAuditLogs = (raffleId: string, callback: (logs: any[]) => void) => {
+export const getAuditLogs = async (raffleId: string): Promise<any[]> => {
   const q = query(
     collection(db, AUDIT_COLLECTION), 
     where('raffleId', '==', raffleId),
     orderBy('timestamp', 'desc'),
     limit(20)
   );
-  return onSnapshot(q, (snapshot) => {
-    const logs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-    callback(logs);
-  });
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 };
