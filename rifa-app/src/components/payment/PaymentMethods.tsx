@@ -48,7 +48,7 @@ export const PaymentMethods: React.FC = () => {
             <div className="flex flex-col pt-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase px-1">Número de Cuenta</span>
               <code className="font-mono bg-purple-50 text-purple-700 px-4 py-2.5 rounded-lg border border-purple-100 text-lg font-black text-center select-all cursor-pointer hover:bg-purple-100 transition-colors block w-full">
-                3147285448
+              3147285337
               </code>
             </div>
           </div>
