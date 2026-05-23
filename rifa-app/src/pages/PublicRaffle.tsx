@@ -7,7 +7,7 @@ import { RaffleHero } from '../components/raffle/RaffleHero';
 import { Toast } from '../components/common/Toast';
 import { useToast } from '../hooks/useToast';
 import Modal from '../components/common/Modal';
-import { CheckCircle, AlertCircle, Phone, User, Tag, Loader2 } from 'lucide-react';
+import { AlertCircle, Phone, User, Tag, Loader2 } from 'lucide-react';
 
 const PublicRaffle = () => {
   const { raffleId } = useParams<{ raffleId: string }>();
