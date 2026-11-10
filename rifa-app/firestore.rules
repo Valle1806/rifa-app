@@ -1,58 +1,214 @@
 rules_version = '2';
+
+// Modelo:
+//   raffles/{r}                    config pública de la rifa (escribe el admin)
+//   raffles/{r}/public/board       estado + alias de cada número vendido (escribe el admin)
+//   raffles/{r}/locks/{n}          número "en revisión" mientras se aprueba una solicitud
+//   raffles/{r}/orders/{o}         compras con datos personales y pagos (solo admin lee)
+//   raffles/{r}/submissions/{s}    comprobantes enviados por compradores, pendientes de aprobar
+//   raffles/{r}/lookups/{hash}     sha256(rifa|celular|PIN) → token del comprador
+//   raffles/{r}/audit/{a}          historial inmutable
+//   access/{token}                 vista del comprador en su enlace personal
+//
+// El público solo puede crear una solicitud completa en un lote atómico
+// (orden pendiente + bloqueos + enlace + lookup + comprobante opcional) y
+// enviar comprobantes con su token. Todo lo demás lo hace el admin.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Función para verificar si el usuario es administrador
+
+    // ---------- utilidades ----------
+
     function isAdmin() {
-      return request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Reglas para la colección de usuarios (Solo el admin puede gestionarlos)
+    function raffleData(raffleId) {
+      return get(/databases/$(database)/documents/raffles/$(raffleId)).data;
+    }
+
+    function orderPath(raffleId, orderId) {
+      return /databases/$(database)/documents/raffles/$(raffleId)/orders/$(orderId);
+    }
+
+    function accessPath(token) {
+      return /databases/$(database)/documents/access/$(token);
+    }
+
+    function boardPath(raffleId) {
+      return /databases/$(database)/documents/raffles/$(raffleId)/public/board;
+    }
+
+    function hasExactly(data, keys) {
+      return data.keys().hasOnly(keys) && data.keys().hasAll(keys);
+    }
+
+    function optionalText(value, max) {
+      return value == null || (value is string && value.size() <= max);
+    }
+
+    function isToken(value) {
+      return value is string && value.matches('^[A-Za-z0-9_-]{22}$');
+    }
+
+    function isReceiptUrl(value) {
+      return value is string && value.size() <= 400
+        && value.matches('^https://res[.]cloudinary[.]com/[A-Za-z0-9_-]+/image/upload/.+$');
+    }
+
+    function isNow(value) {
+      return value == request.time;
+    }
+
+    // ---------- validaciones de la solicitud pública ----------
+
+    function validPublicOrder(raffleId) {
+      let d = request.resource.data;
+      return raffleData(raffleId).status == 'active'
+        && hasExactly(d, ['numbers', 'buyer', 'advisor', 'status', 'payments', 'accessToken', 'source', 'createdAt', 'updatedAt'])
+        && d.status == 'pending'
+        && d.source == 'public'
+        && d.payments is list && d.payments.size() == 0
+        && d.numbers is list && d.numbers.size() >= 1 && d.numbers.size() <= 20
+        && d.numbers.toSet().size() == d.numbers.size()
+        && d.buyer is map && hasExactly(d.buyer, ['name', 'phone'])
+        && d.buyer.name is string && d.buyer.name.size() >= 3 && d.buyer.name.size() <= 80
+        && d.buyer.phone is string && d.buyer.phone.matches('^3[0-9]{9}$')
+        && optionalText(d.advisor, 40)
+        && isToken(d.accessToken)
+        && existsAfter(accessPath(d.accessToken))
+        && isNow(d.createdAt) && isNow(d.updatedAt);
+    }
+
+    // El bloqueo solo vale si su orden se crea en este mismo lote y lo incluye.
+    function validLock(raffleId, number) {
+      let d = request.resource.data;
+      let raffle = raffleData(raffleId);
+      let order = getAfter(orderPath(raffleId, d.orderId)).data;
+      return hasExactly(d, ['orderId', 'createdAt'])
+        && isNow(d.createdAt)
+        && order.status == 'pending'
+        && order.source == 'public'
+        && isNow(order.createdAt)
+        && number in order.numbers
+        && number.size() == raffle.digitCount
+        && number.matches('^[0-9]+$')
+        && int(number) < raffle.totalTickets
+        && !(number in get(boardPath(raffleId)).data.tickets);
+    }
+
+    function lockExpired(raffleId) {
+      return resource.data.createdAt + duration.value(raffleData(raffleId).reservationHours, 'h') < request.time;
+    }
+
+    function validPublicAccess(token) {
+      let d = request.resource.data;
+      let order = getAfter(orderPath(d.raffleId, d.orderId)).data;
+      return hasExactly(d, ['raffleId', 'orderId', 'alias', 'numbers', 'state', 'total', 'paid', 'updatedAt'])
+        && order.accessToken == token
+        && order.status == 'pending'
+        && isNow(order.createdAt)
+        && d.numbers == order.numbers
+        && d.state == 'pending'
+        && d.paid == 0
+        && d.total == order.numbers.size() * raffleData(d.raffleId).price
+        && d.alias is string && d.alias.size() <= 30
+        && isNow(d.updatedAt);
+    }
+
+    function validLookup(raffleId, hash) {
+      let d = request.resource.data;
+      let access = getAfter(accessPath(d.token)).data;
+      return hash.matches('^[0-9a-f]{64}$')
+        && hasExactly(d, ['token'])
+        && isToken(d.token)
+        && access.raffleId == raffleId
+        && access.state == 'pending'
+        && isNow(access.updatedAt);
+    }
+
+    // Comprobante del comprador: debe traer un token válido de una orden viva de esta rifa.
+    function validSubmission(raffleId) {
+      let d = request.resource.data;
+      let access = getAfter(accessPath(d.token)).data;
+      return hasExactly(d, ['orderId', 'token', 'amount', 'receiptUrl', 'note', 'createdAt'])
+        && isToken(d.token)
+        && access.raffleId == raffleId
+        && access.orderId == d.orderId
+        && access.state in ['pending', 'reserved', 'partial', 'paid']
+        && (d.amount == null || (d.amount is int && d.amount > 0 && d.amount <= 100000000))
+        && isReceiptUrl(d.receiptUrl)
+        && optionalText(d.note, 200)
+        && isNow(d.createdAt);
+    }
+
+    // ---------- colecciones ----------
+
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false; // Solo se puede crear via Admin SDK o Cloud Functions por seguridad, o el primer admin manualmente
+      allow write: if false;
     }
 
-    // Reglas para las Rifas (Configuración)
+    match /access/{token} {
+      allow get: if true;
+      allow list, update, delete: if isAdmin();
+      allow create: if isAdmin() || validPublicAccess(token);
+    }
+
     match /raffles/{raffleId} {
-      // Cualquiera puede ver la configuración de la rifa
       allow read: if true;
-      // Solo el admin puede crear o modificar la configuración
       allow write: if isAdmin();
 
-      // Reglas para los Tickets dentro de una rifa
-      match /tickets/{ticketId} {
-        // Cualquiera puede ver el estado público de los tickets
+      match /public/{docId} {
         allow read: if true;
-        
-        // Solo el admin puede crear tickets (inicialización) o borrarlos
-        allow create, delete: if isAdmin();
+        allow write: if isAdmin();
+      }
 
-        // Reserva pública sin login: disponible -> reservado (campos que escribe reserveTicket)
-        allow update: if (
-          resource.data.status == 'disponible' &&
-          request.resource.data.status == 'reservado' &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'advisor', 'hasReceipt', 'updatedAt', 'buyerName', 'receiptUrl'])
-        ) || isAdmin();
+      match /locks/{number} {
+        allow read: if true;
+        allow delete: if isAdmin();
+        allow create: if validLock(raffleId, number);
+        allow update: if lockExpired(raffleId) && validLock(raffleId, number);
+      }
 
-        // Subcolección PRIVADA para datos sensibles
-        match /private/data {
-          // Solo el admin puede leer datos privados
-          allow read: if isAdmin();
-          // Cualquiera puede crear los datos privados al reservar
-          allow create: if get(/databases/$(database)/documents/raffles/$(raffleId)/tickets/$(ticketId)).data.status == 'disponible';
-          // Solo el admin puede actualizar o borrar datos privados
-          allow update, delete: if isAdmin();
+      match /orders/{orderId} {
+        allow read, update, delete: if isAdmin();
+        allow create: if isAdmin() || validPublicOrder(raffleId);
+      }
+
+      match /submissions/{submissionId} {
+        allow read, delete: if isAdmin();
+        allow update: if false;
+        allow create: if isAdmin() || validSubmission(raffleId);
+      }
+
+      match /lookups/{hash} {
+        allow get: if true;
+        allow list, delete: if isAdmin();
+        allow update: if false;
+        allow create: if isAdmin() || validLookup(raffleId, hash);
+      }
+
+      // Historial de solo escritura: nadie puede editarlo ni borrarlo.
+      match /audit/{entryId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin()
+          && request.resource.data.performedBy == request.auth.uid
+          && isNow(request.resource.data.createdAt);
+        allow update, delete: if false;
+      }
+
+      // Modelo anterior: solo el admin puede leerlo (para migrar) y borrarlo.
+      match /tickets/{ticketId} {
+        allow read, delete: if isAdmin();
+        allow create, update: if false;
+
+        match /private/{docId} {
+          allow read, delete: if isAdmin();
+          allow create, update: if false;
         }
       }
-    }
-
-    // Reglas para los Logs de Auditoría
-    match /audit_logs/{logId} {
-      // Solo el admin puede ver y escribir logs
-      allow read, write: if isAdmin();
     }
   }
 }

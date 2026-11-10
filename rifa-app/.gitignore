@@ -29,3 +29,6 @@ dist-ssr
 
 # Firebase cache
 .firebase/
+# Documentos internos (solo locales)
+docs/HANDOFF.md
+docs/auditoria-rifamaster.html
