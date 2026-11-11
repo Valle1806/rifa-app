@@ -59,7 +59,7 @@ Copia `.env.example` a `.env` y completa los valores.
 ## Puesta en marcha (una sola vez)
 
 1. **Cloudinary**: en el upload preset sin firma, permite solo `jpg, png, webp, heic`, limita el tamaño a 5 MB, desactiva *overwrite* y activa *unique filename*.
-2. **App Check** (recomendado): en Firebase → App Check registra la web con reCAPTCHA v3, pon la clave en `VITE_RECAPTCHA_SITE_KEY` y, después de verificar que todo funciona, activa *Enforce* para Firestore.
+2. **App Check** (recomendado): en Firebase → App Check registra la web con Fraud Defense (reCAPTCHA Enterprise; el v3 clásico está obsoleto), pon la clave en `VITE_RECAPTCHA_SITE_KEY` y, después de verificar que todo funciona, activa *Enforce* para Firestore.
 3. **Admin**: en Firestore crea `users/<uid>` con `role: "admin"`, donde `<uid>` es tu usuario de Authentication.
 4. **Desplegar** reglas y web juntas, porque el código nuevo y las reglas nuevas dependen entre sí:
 

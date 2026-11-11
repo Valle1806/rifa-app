@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { ReCaptchaV3Provider, initializeAppCheck } from 'firebase/app-check';
+import { ReCaptchaEnterpriseProvider, initializeAppCheck } from 'firebase/app-check';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -16,6 +16,7 @@ export const firebaseApp = initializeApp({
 
 /**
  * App Check hace que Firestore solo acepte peticiones de esta web, no de scripts sueltos.
+ * Usa Fraud Defense (reCAPTCHA Enterprise; el v3 clásico está obsoleto).
  * Se activa al definir VITE_RECAPTCHA_SITE_KEY; en desarrollo usa un token de depuración.
  */
 if (env.VITE_RECAPTCHA_SITE_KEY) {
@@ -24,7 +25,7 @@ if (env.VITE_RECAPTCHA_SITE_KEY) {
       env.VITE_APPCHECK_DEBUG_TOKEN || true;
   }
   initializeAppCheck(firebaseApp, {
-    provider: new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY),
+    provider: new ReCaptchaEnterpriseProvider(env.VITE_RECAPTCHA_SITE_KEY),
     isTokenAutoRefreshEnabled: true,
   });
 }
