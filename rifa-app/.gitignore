@@ -32,3 +32,6 @@ dist-ssr
 # Documentos internos (solo locales)
 docs/HANDOFF.md
 docs/auditoria-rifamaster.html
+
+# Respaldos con datos personales
+respaldos/
