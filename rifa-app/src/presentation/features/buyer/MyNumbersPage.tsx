@@ -1,7 +1,7 @@
-import { KeyRound } from 'lucide-react';
-import { useParams } from 'react-router-dom';
-import { formatMoney, type AccessState } from '../../../domain';
-import { formatDateTime } from '../../shared/format';
+import { KeyRound, Trophy } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { formatMoney, prizesWonBy, type AccessState, type RaffleResult } from '../../../domain';
+import { formatDateTime, resultPath } from '../../shared/format';
 import { useWatch } from '../../shared/hooks/useWatch';
 import { useServices } from '../../shared/services';
 import { StatusBadge } from '../../shared/ui/Badge';
@@ -20,6 +20,15 @@ const STATE_HELP: Record<AccessState, string> = {
   paid: '¡Tus números están pagados! Mucha suerte en el sorteo.',
   rejected: 'Esta solicitud fue rechazada. Si crees que es un error, contacta al organizador.',
   cancelled: 'Estos números fueron liberados. Contacta al organizador si tienes dudas.',
+};
+
+/** Texto del botón al resultado: felicita si alguno de sus números ganó. */
+const resultLabel = (result: RaffleResult | null, numbers: string[]): string => {
+  if (!result) return 'Ver resultado del sorteo';
+  const won = prizesWonBy(result, numbers);
+  return won.length > 0
+    ? `¡Ganaste ${won.map((w) => `${w.prize} con el ${w.winningNumber}`).join(' y ')}!`
+    : 'Ver resultado del sorteo';
 };
 
 const ACCEPTS_PROOFS: AccessState[] = ['pending', 'reserved', 'partial'];
@@ -81,6 +90,14 @@ export const MyNumbersPage = () => {
 
         <p className="mt-5 text-sm text-slate-600">{STATE_HELP[me.state]}</p>
         <p className="mt-1 text-xs text-slate-400">Actualizado: {formatDateTime(me.updatedAt)}</p>
+
+        <Link
+          to={resultPath(me.raffleId)}
+          className="mt-5 flex items-center justify-center gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 hover:bg-amber-100 transition"
+        >
+          <Trophy size={18} />
+          {resultLabel(raffle.data?.result ?? null, me.numbers)}
+        </Link>
       </Panel>
 
       <Panel title="Tu comprobante">

@@ -5,13 +5,18 @@ import { ProgressBar } from './ProgressBar';
 export const RaffleHero = ({ raffle, soldCount }: { raffle: Raffle; soldCount: number }) => (
   <section className="bg-white rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm border border-slate-100 flex flex-col md:flex-row gap-6 md:gap-10">
     <div className="w-full md:w-1/2">
-      <div className="bg-slate-900 rounded-2xl aspect-square w-full max-w-[320px] mx-auto md:max-w-none flex items-center justify-center border-4 border-white shadow-xl overflow-hidden">
-        {raffle.imageUrl ? (
-          <img src={raffle.imageUrl} alt={`Premio: ${raffle.title}`} className="w-full h-full object-cover" />
-        ) : (
+      {/* La imagen se muestra completa, en su proporción: los flyers verticales no pierden encabezado ni pie. */}
+      {raffle.imageUrl ? (
+        <img
+          src={raffle.imageUrl}
+          alt={`Premio: ${raffle.title}`}
+          className="block w-full h-auto max-w-[480px] mx-auto rounded-2xl border-4 border-white shadow-xl"
+        />
+      ) : (
+        <div className="bg-slate-900 rounded-2xl aspect-square w-full max-w-[320px] mx-auto md:max-w-none flex items-center justify-center border-4 border-white shadow-xl">
           <Gift size={64} className="text-indigo-400" aria-hidden="true" />
-        )}
-      </div>
+        </div>
+      )}
     </div>
 
     <div className="w-full md:w-1/2 flex flex-col justify-between gap-6 min-w-0">

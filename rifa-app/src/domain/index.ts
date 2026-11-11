@@ -6,3 +6,4 @@ export * from './order';
 export * from './raffle';
 export * from './ticket';
 export * from './money';
+export * from './result';

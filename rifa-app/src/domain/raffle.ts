@@ -1,3 +1,5 @@
+import type { RaffleResult } from './result';
+
 export type RaffleStatus = 'active' | 'closed';
 
 export interface Raffle {
@@ -12,9 +14,11 @@ export interface Raffle {
   /** Horas que un número queda "en revisión" mientras el admin aprueba la solicitud. */
   reservationHours: number;
   createdAt: number;
+  /** Se llena cuando el admin publica el número ganador. */
+  result: RaffleResult | null;
 }
 
-export type RaffleDraft = Omit<Raffle, 'id' | 'createdAt' | 'status'>;
+export type RaffleDraft = Omit<Raffle, 'id' | 'createdAt' | 'status' | 'result'>;
 
 export const DIGIT_COUNTS = [2, 3, 4] as const;
 export const DEFAULT_RESERVATION_HOURS = 24;

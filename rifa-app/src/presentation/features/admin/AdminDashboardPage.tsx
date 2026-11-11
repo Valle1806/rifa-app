@@ -1,4 +1,4 @@
-import { ExternalLink, Lock, LockOpen, LogOut, Plus, Settings, Ticket, Trash2 } from 'lucide-react';
+import { ExternalLink, Grid3x3, Lock, LockOpen, LogOut, Plus, Settings, Ticket, Trash2, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import type { AdminContext } from '../../../application/ports';
@@ -13,6 +13,7 @@ import { PageLoader } from '../../shared/ui/Spinner';
 import { useSession } from '../auth/session';
 import { AccessIssuedModal } from '../raffle/AccessIssuedModal';
 import { AdminTicketBoard } from './components/AdminTicketBoard';
+import { AvailableNumbersModal } from '../raffle/AvailableNumbersModal';
 import { DirectSaleModal } from './components/DirectSaleModal';
 import { InboxPanel } from './components/InboxPanel';
 import { LegacyMigrationBanner } from './components/LegacyMigrationBanner';
@@ -20,6 +21,7 @@ import { OrderDetailModal } from './components/OrderDetailModal';
 import { OrdersTable } from './components/OrdersTable';
 import { RaffleFormModal } from './components/RaffleFormModal';
 import { RaffleSidebar } from './components/RaffleSidebar';
+import { ResultModal } from './components/ResultModal';
 import { AdvisorRanking, AuditFeed } from './components/SidePanels';
 import { StatsOverview } from './components/StatsOverview';
 import { useAdminRaffle, type AdminRaffleData } from './hooks/useAdminRaffle';
@@ -31,10 +33,14 @@ const RaffleHeader = ({
   ctx,
   onEdit,
   onDelete,
+  onResult,
+  onAvailable,
 }: {
   ctx: AdminContext;
   onEdit: () => void;
   onDelete: () => void;
+  onResult: () => void;
+  onAvailable: () => void;
 }) => {
   const { admin } = useServices();
   const { pending, run } = useAsyncAction();
@@ -47,6 +53,7 @@ const RaffleHeader = ({
         <div className="flex items-center gap-3">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 truncate">{raffle.title}</h1>
           {!open && <Badge tone="neutral">Cerrada</Badge>}
+          {raffle.result && <Badge tone="amber">Ganadores: {raffle.result.winners.map((w) => w.winningNumber).join(', ')}</Badge>}
         </div>
         <p className="text-slate-500 font-medium text-sm">Aprueba solicitudes, registra pagos y asigna números</p>
       </div>
@@ -59,6 +66,12 @@ const RaffleHeader = ({
         >
           Ver pública <ExternalLink size={14} />
         </a>
+        <Button variant="secondary" icon={<Grid3x3 size={16} />} onClick={onAvailable}>
+          Disponibles
+        </Button>
+        <Button variant="secondary" icon={<Trophy size={16} />} onClick={onResult}>
+          Resultado
+        </Button>
         <Button
           variant="secondary"
           loading={pending}
@@ -83,11 +96,15 @@ const RaffleWorkspace = ({ data, ctx, onEdit, onDelete }: { data: AdminRaffleDat
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [saleNumbers, setSaleNumbers] = useState<string[] | null>(null);
   const [issued, setIssued] = useState<{ access: IssuedAccess; numbers: string[] } | null>(null);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [availableOpen, setAvailableOpen] = useState(false);
   const openRow = openOrderId ? data.ordersById.get(openOrderId) : undefined;
 
   return (
     <div className="space-y-8">
-      <RaffleHeader ctx={ctx} onEdit={onEdit} onDelete={onDelete} />
+      <RaffleHeader ctx={ctx} onEdit={onEdit} onDelete={onDelete} onResult={() => setResultOpen(true)}
+        onAvailable={() => setAvailableOpen(true)}
+      />
       <LegacyMigrationBanner ctx={ctx} />
       <StatsOverview counts={data.counts} total={ctx.raffle.totalTickets} collected={data.collected} receivable={data.receivable} />
       <InboxPanel ctx={ctx} requests={data.pendingRequests} submissions={data.submissions} ordersById={data.ordersById} />
@@ -108,6 +125,15 @@ const RaffleWorkspace = ({ data, ctx, onEdit, onDelete }: { data: AdminRaffleDat
         </div>
       </div>
 
+      <AvailableNumbersModal raffle={ctx.raffle} views={data.views} open={availableOpen} onClose={() => setAvailableOpen(false)} />
+      {resultOpen && (
+        <ResultModal
+          ctx={ctx}
+          board={data.availability.board}
+          rowByNumber={data.rowByNumber}
+          onClose={() => setResultOpen(false)}
+        />
+      )}
       <OrderDetailModal key={openOrderId} ctx={ctx} row={openRow} onClose={() => setOpenOrderId(null)} />
       <DirectSaleModal
         ctx={ctx}

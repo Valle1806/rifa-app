@@ -5,10 +5,12 @@ import {
   findUnavailableNumbers,
   isRaffleOpen,
   isValidTicketNumber,
+  resolveResult,
   type Board,
   type BuyerAccess,
   type Raffle,
   type TicketLock,
+  type WinnerDraft,
 } from '../domain';
 import { uploadImage } from './images';
 import type {
@@ -53,6 +55,9 @@ export interface Availability {
   board: Board;
   locks: TicketLock[];
 }
+
+/** Un premio tal como lo edita el admin: las fotos ya publicadas más las nuevas por subir. */
+export type WinnerInput = WinnerDraft & { newDeliveryPhotos: File[] };
 
 export interface IssuedAccess {
   token: string;
@@ -161,6 +166,38 @@ export const createAdminUseCases = ({ raffles, orders, submissions, legacy, imag
     updateRaffle: (raffleId: string, patch: RafflePatch) => raffles.update(raffleId, patch),
     uploadPrizeImage: (raffleId: string, file: File) => uploadImage(images, raffleId, 'prize', file),
     deleteRaffle: (raffleId: string) => raffles.remove(raffleId),
+
+    /**
+     * Publica los ganadores y cierra la rifa: ya no se venden números después del sorteo.
+     * Sirve también para actualizar: agrega fotos de entrega nuevas a cada premio y,
+     * si no llega una foto de soporte nueva, conserva la que ya estaba publicada.
+     */
+    async announceResult(
+      raffle: Raffle,
+      board: Board,
+      winners: WinnerInput[],
+      proof: { file: File | null; text: string },
+    ): Promise<void> {
+      // Valida todo (también el total de fotos por premio) antes de subir nada.
+      const withPending = winners.map(({ newDeliveryPhotos, ...draft }) => ({
+        ...draft,
+        deliveryPhotoUrls: [...draft.deliveryPhotoUrls, ...newDeliveryPhotos.map((f) => f.name)],
+      }));
+      resolveResult(raffle, board, withPending, { imageUrl: null, text: proof.text }, Date.now());
+
+      const upload = (kind: 'result' | 'winner', file: File) => uploadImage(images, raffle.id, kind, file);
+      const imageUrl = proof.file ? await upload('result', proof.file) : (raffle.result?.proofImageUrl ?? null);
+      const drafts: WinnerDraft[] = await Promise.all(
+        winners.map(async ({ newDeliveryPhotos, ...draft }) => ({
+          ...draft,
+          deliveryPhotoUrls: [...draft.deliveryPhotoUrls, ...(await Promise.all(newDeliveryPhotos.map((f) => upload('winner', f))))],
+        })),
+      );
+      const result = resolveResult(raffle, board, drafts, { imageUrl, text: proof.text }, Date.now());
+      await raffles.update(raffle.id, { result, status: 'closed' });
+    },
+
+    clearResult: (raffleId: string) => raffles.update(raffleId, { result: null }),
 
     approveRequest: (ctx: AdminContext, orderId: string) => orders.approve(ctx, orderId),
     rejectRequest: (ctx: AdminContext, orderId: string) => orders.reject(ctx, orderId),

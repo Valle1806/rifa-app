@@ -1,6 +1,6 @@
 import { createAdminUseCases, createBuyerUseCases, type Dependencies } from '../application/useCases';
 import { secureRandom } from './browser/secureRandom';
-import { cloudinaryStorage } from './cloudinary/imageStorage';
+import { createCloudinaryStorage } from './cloudinary/imageStorage';
 import { authGateway } from './firebase/authGateway';
 import { createLegacyMigrator } from './firebase/legacyMigrator';
 import { createOrderRepository } from './firebase/orderRepository';
@@ -18,7 +18,7 @@ const dependencies: Dependencies = {
   access: accessRepository,
   audit: auditRepository,
   legacy: createLegacyMigrator(secureRandom),
-  images: cloudinaryStorage,
+  images: createCloudinaryStorage(secureRandom),
   random: secureRandom,
 };
 

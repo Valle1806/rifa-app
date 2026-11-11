@@ -2,7 +2,8 @@ import { Ban, CheckCircle2, Clock, Ticket, Wallet } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { formatMoney, type AccessState } from '../../../domain';
 import { cn } from '../../shared/cn';
-import { formatDateTime } from '../../shared/format';
+import { formatDateTime, resultUrl } from '../../shared/format';
+import { QrCode } from './QrCode';
 import type { ReceiptData } from './receiptData';
 
 interface Headline {
@@ -84,7 +85,15 @@ export const TicketReceipt = ({ data }: { data: ReceiptData }) => {
         <div className="mx-6 border-t-2 border-dashed border-slate-200" />
       </div>
 
-      <footer className="px-6 pb-6 flex items-center justify-between text-xs text-slate-500">
+      <div className="px-6 flex items-center gap-4">
+        <QrCode value={resultUrl(data.raffleId)} size={84} label="Código QR del resultado del sorteo" />
+        <div className="min-w-0 text-xs text-slate-500 leading-snug">
+          <p className="font-bold text-slate-800 text-[13px]">Resultado del sorteo</p>
+          <p>Escanea el código para ver el número ganador cuando se publique.</p>
+        </div>
+      </div>
+
+      <footer className="px-6 pt-4 pb-6 flex items-center justify-between text-xs text-slate-500">
         <span>
           Referencia <strong className="font-mono text-slate-800">{data.reference}</strong>
         </span>

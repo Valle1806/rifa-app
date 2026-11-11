@@ -13,11 +13,12 @@ export const assertValidImage = (file: File): void => {
   }
 };
 
-export type ImageKind = 'receipt' | 'prize' | 'winner';
+export type ImageKind = 'receipt' | 'prize' | 'result' | 'winner';
 
 const FOLDERS: Record<ImageKind, string> = {
   receipt: 'comprobantes',
   prize: 'premio',
+  result: 'resultado',
   winner: 'ganador',
 };
 

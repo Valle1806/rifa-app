@@ -1,9 +1,12 @@
-import { AlertCircle, Search } from 'lucide-react';
+import { AlertCircle, Search, Share2, Trophy } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { IssuedAccess } from '../../../application/useCases';
 import { MAX_NUMBERS_PER_REQUEST, isRaffleOpen, type TicketView } from '../../../domain';
+import { resultPath } from '../../shared/format';
+import { Button } from '../../shared/ui/Button';
 import { PageLoader } from '../../shared/ui/Spinner';
+import { AvailableNumbersModal } from '../raffle/AvailableNumbersModal';
 import { RaffleHero } from '../raffle/RaffleHero';
 import { TicketGrid, TicketLegend } from '../raffle/TicketGrid';
 import { useRaffleBoard } from '../raffle/useRaffleBoard';
@@ -23,6 +26,7 @@ export const PublicRafflePage = () => {
   const { raffle, views, counts, availability, loading } = useRaffleBoard(raffleId);
   const selection = useTicketSelection(MAX_NUMBERS_PER_REQUEST);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [issued, setIssued] = useState<{ access: IssuedAccess; numbers: string[] } | null>(null);
 
   const { toggle, clear } = selection;
@@ -45,12 +49,22 @@ export const PublicRafflePage = () => {
       title={raffle.title}
       homeHref={`/r/${raffle.id}`}
       actions={
-        <Link
-          to={`/r/${raffle.id}/consultar`}
-          className="flex items-center gap-1.5 text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition"
-        >
-          <Search size={16} /> Mis números
-        </Link>
+        <>
+          {raffle.result && (
+            <Link
+              to={resultPath(raffle.id)}
+              className="flex items-center gap-1.5 text-sm font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-2 rounded-xl transition"
+            >
+              <Trophy size={16} /> Ganador
+            </Link>
+          )}
+          <Link
+            to={`/r/${raffle.id}/consultar`}
+            className="flex items-center gap-1.5 text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition"
+          >
+            <Search size={16} /> Mis números
+          </Link>
+        </>
       }
     >
       <RaffleHero raffle={raffle} soldCount={soldCount} />
@@ -66,6 +80,11 @@ export const PublicRafflePage = () => {
                 ? `Toca los números disponibles que quieras (hasta ${MAX_NUMBERS_PER_REQUEST}) y envía tu solicitud.`
                 : 'Esta rifa ya no recibe solicitudes.'}
             </p>
+            {open && (
+              <Button variant="secondary" size="sm" className="mt-3" icon={<Share2 size={14} />} onClick={() => setShareOpen(true)}>
+                Compartir números disponibles
+              </Button>
+            )}
           </div>
           <TicketLegend />
         </div>
@@ -79,6 +98,8 @@ export const PublicRafflePage = () => {
       </section>
 
       <PaymentMethods />
+
+      <AvailableNumbersModal raffle={raffle} views={views} open={shareOpen} onClose={() => setShareOpen(false)} />
 
       <SelectionBar
         numbers={selection.numbers}

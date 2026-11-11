@@ -2,6 +2,7 @@ import { deriveAccessState, summarizeOrder, type AccessState, type BuyerAccess, 
 
 /** Lo que muestra el comprobante, venga del enlace del comprador o de la orden en el panel. */
 export interface ReceiptData {
+  raffleId: string;
   raffleTitle: string;
   holder: string;
   numbers: string[];
@@ -17,6 +18,7 @@ export interface ReceiptData {
 const referenceOf = (orderId: string) => orderId.slice(0, 8).toUpperCase();
 
 export const receiptFromAccess = (access: BuyerAccess, raffleTitle: string): ReceiptData => ({
+  raffleId: access.raffleId,
   raffleTitle,
   holder: access.alias,
   numbers: access.numbers,
@@ -31,6 +33,7 @@ export const receiptFromAccess = (access: BuyerAccess, raffleTitle: string): Rec
 export const receiptFromOrder = (order: Order, raffle: Pick<Raffle, 'title' | 'price'>): ReceiptData => {
   const summary = summarizeOrder(order, raffle.price);
   return {
+    raffleId: order.raffleId,
     raffleTitle: raffle.title,
     holder: order.buyer.name,
     numbers: order.numbers,

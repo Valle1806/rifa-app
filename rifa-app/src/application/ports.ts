@@ -8,6 +8,7 @@ import type {
   PaymentSubmission,
   Raffle,
   RaffleDraft,
+  RaffleResult,
   RaffleStatus,
   TicketLock,
 } from '../domain';
@@ -34,7 +35,7 @@ export interface AuthGateway {
   sendPasswordReset(email: string): Promise<void>;
 }
 
-export type RafflePatch = Partial<RaffleDraft> & { status?: RaffleStatus };
+export type RafflePatch = Partial<RaffleDraft> & { status?: RaffleStatus; result?: RaffleResult | null };
 
 export interface RaffleRepository {
   listAll(): Promise<Raffle[]>;

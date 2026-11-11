@@ -32,6 +32,19 @@ export const toRaffle = (snap: DocumentSnapshot): Raffle => {
     status: d.status ?? (d.isActive === false ? 'closed' : 'active'),
     reservationHours: d.reservationHours ?? DEFAULT_RESERVATION_HOURS,
     createdAt: toMillis(d.createdAt),
+    result: Array.isArray(d.result?.winners)
+      ? {
+          winners: d.result.winners.map((w: DocumentData) => ({
+            prize: w.prize ?? '',
+            winningNumber: w.winningNumber ?? '',
+            winnerAlias: w.winnerAlias ?? null,
+            deliveryPhotoUrls: Array.isArray(w.deliveryPhotoUrls) ? w.deliveryPhotoUrls : [],
+          })),
+          proofImageUrl: d.result.proofImageUrl || null,
+          proofText: d.result.proofText ?? '',
+          announcedAt: toMillis(d.result.announcedAt),
+        }
+      : null,
   };
 };
 
