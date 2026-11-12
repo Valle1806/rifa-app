@@ -22,7 +22,8 @@ import { OrdersTable } from './components/OrdersTable';
 import { RaffleFormModal } from './components/RaffleFormModal';
 import { RaffleSidebar } from './components/RaffleSidebar';
 import { ResultModal } from './components/ResultModal';
-import { AdvisorRanking, AuditFeed } from './components/SidePanels';
+import { AdvisorsPanel } from './components/AdvisorsPanel';
+import { AuditFeed } from './components/SidePanels';
 import { StatsOverview } from './components/StatsOverview';
 import { useAdminRaffle, type AdminRaffleData } from './hooks/useAdminRaffle';
 import { useRaffleList } from './hooks/useRaffleList';
@@ -120,7 +121,12 @@ const RaffleWorkspace = ({ data, ctx, onEdit, onDelete }: { data: AdminRaffleDat
           <OrdersTable rows={data.rows} price={ctx.raffle.price} onOpen={(row) => setOpenOrderId(row.order.id)} />
         </div>
         <div className="space-y-8 min-w-0">
-          <AdvisorRanking advisors={data.advisors} />
+          <AdvisorsPanel
+            ctx={ctx}
+            stats={data.advisorStats}
+            unassigned={data.unassignedAdvisors}
+            numbersWithoutAdvisor={data.numbersWithoutAdvisor}
+          />
           <AuditFeed entries={data.audit} />
         </div>
       </div>

@@ -20,7 +20,10 @@ export interface Order {
   raffleId: string;
   numbers: string[];
   buyer: Buyer;
+  /** Nombre del asesor tal como quedó escrito (texto libre en órdenes anteriores o "Otro"). */
   advisor: string | null;
+  /** Código del asesor registrado. Null mientras no se haya asignado. */
+  advisorId: string | null;
   status: OrderStatus;
   payments: Payment[];
   accessToken: string;

@@ -54,7 +54,11 @@ export const PurchaseRequestModal = ({ open, raffle, numbers, availability, onCl
             </p>
           </div>
 
-          <BuyerFields idPrefix="purchase" />
+          <BuyerFields
+            idPrefix="purchase"
+            advisors={raffle.advisors}
+            otherAdvisorHint="Escribe su nombre; el organizador lo confirma al aprobar tu solicitud."
+          />
 
           <details className="rounded-2xl border border-slate-200 p-4 group">
             <summary className="cursor-pointer font-bold text-slate-700 text-sm">

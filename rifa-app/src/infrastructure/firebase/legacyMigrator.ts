@@ -58,6 +58,7 @@ export const createLegacyMigrator = (random: SecureRandom): LegacyMigrator => {
         numbers: group.numbers,
         buyer: group.buyer,
         advisor: group.advisor,
+        advisorId: null,
         status: 'active',
         payments: group.payments,
         // Reutiliza el enlace si la orden ya se había creado en un intento anterior.

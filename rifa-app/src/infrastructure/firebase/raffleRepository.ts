@@ -3,6 +3,7 @@ import {
   doc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -67,6 +68,14 @@ export const raffleRepository: RaffleRepository = {
   },
 
   update: (raffleId, patch) => updateDoc(refs.raffle(raffleId), patch),
+
+  updateAdvisors: (raffleId, change) =>
+    runTransaction(db, async (tx) => {
+      const snap = await tx.get(refs.raffle(raffleId));
+      const advisors = change(toRaffle(snap).advisors);
+      tx.update(refs.raffle(raffleId), { advisors });
+      return advisors;
+    }),
 
   async remove(raffleId) {
     const docs = await collectRaffleDocs(raffleId);

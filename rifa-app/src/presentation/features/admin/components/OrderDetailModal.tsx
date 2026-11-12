@@ -32,15 +32,24 @@ const BuyerEditor = ({ ctx, row }: { ctx: AdminContext; row: OrderRow }) => {
   const { pending, run } = useAsyncAction();
   const { order } = row;
   const form = useZodForm(buyerFormSchema, {
-    buyer: { name: order.buyer.name, phone: order.buyer.phone, advisor: order.advisor ?? '' },
+    buyer: {
+      name: order.buyer.name,
+      phone: order.buyer.phone,
+      // El nombre vigente del asesor (pudo haberse renombrado después de la venta).
+      advisor: ctx.raffle.advisors.find((a) => a.id === order.advisorId)?.name ?? order.advisor ?? '',
+    },
   });
 
-  const submit = form.handleSubmit(({ buyer }) => run(() => admin.updateOrderDetails(ctx, order.id, buyer), 'Datos actualizados'));
+  const submit = form.handleSubmit(({ buyer }) => run(() => admin.updateOrderDetails(ctx, order, buyer), 'Datos actualizados'));
 
   return (
     <FormProvider {...form}>
       <form onSubmit={submit} className="space-y-4" noValidate>
-        <BuyerFields idPrefix={`edit-${order.id}`} />
+        <BuyerFields
+          idPrefix={`edit-${order.id}`}
+          advisors={ctx.raffle.advisors}
+          otherAdvisorHint="Se agrega a la lista de asesores al guardar."
+        />
         <Button type="submit" variant="secondary" fullWidth loading={pending} icon={<Save size={16} />}>
           Guardar datos
         </Button>

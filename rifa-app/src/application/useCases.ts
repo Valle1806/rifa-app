@@ -1,13 +1,19 @@
 import {
+  ADVISOR_ID_LENGTH,
   DomainError,
   NumbersUnavailableError,
   PIN_LENGTH,
+  findAdvisorByName,
   findUnavailableNumbers,
+  normalizeName,
   isRaffleOpen,
   isValidTicketNumber,
   resolveResult,
+  type Advisor,
+  type AdvisorRef,
   type Board,
   type BuyerAccess,
+  type Order,
   type Raffle,
   type TicketLock,
   type WinnerDraft,
@@ -30,6 +36,7 @@ import type {
   SubmissionRepository,
 } from './ports';
 import {
+  advisorNameSchema,
   numbersSchema,
   type BuyerFormValues,
   type PaymentFormValues,
@@ -154,8 +161,61 @@ export const createAdminUseCases = ({ raffles, orders, submissions, legacy, imag
     receiptUrl: draft.file ? await uploadImage(images, raffleId, 'receipt', draft.file) : null,
   });
 
+  const newAdvisorId = (existing: Advisor[]): string => {
+    const taken = new Set(existing.map((a) => a.id));
+    let id = '';
+    while (id.length < ADVISOR_ID_LENGTH || taken.has(id)) {
+      id = random.token().replace(/[^A-Za-z0-9]/g, '').slice(0, ADVISOR_ID_LENGTH);
+    }
+    return id;
+  };
+
+  /** Busca el asesor por nombre (sin importar mayúsculas ni tildes) o lo crea si no existe. */
+  const ensureAdvisor = async (raffleId: string, rawName: string): Promise<Advisor> => {
+    const name = advisorNameSchema.parse(rawName);
+    let result: Advisor | null = null;
+    await raffles.updateAdvisors(raffleId, (current) => {
+      const found = findAdvisorByName(current, name);
+      result = found ? { ...found, active: true } : { id: newAdvisorId(current), name, active: true };
+      const created = result;
+      return found ? current.map((a) => (a.id === created.id ? created : a)) : [...current, created];
+    });
+    return result!;
+  };
+
+  /** Texto del formulario → asesor registrado. Lo que el admin escribe en "Otro" queda creado. */
+  const resolveAdvisor = async (raffle: Raffle, name: string | null): Promise<AdvisorRef | null> => {
+    if (!name) return null;
+    const found = findAdvisorByName(raffle.advisors, name);
+    const advisor = found ?? (await ensureAdvisor(raffle.id, name));
+    return { id: advisor.id, name: advisor.name };
+  };
+
+  const editAdvisor = (raffleId: string, id: string, change: Partial<Omit<Advisor, 'id'>>) =>
+    raffles.updateAdvisors(raffleId, (current) => {
+      if (change.name !== undefined) {
+        const clash = findAdvisorByName(current, change.name);
+        if (clash && clash.id !== id) throw new DomainError('DUPLICATE_ADVISOR', `Ya existe un asesor llamado ${clash.name}.`);
+      }
+      return current.map((a) => (a.id === id ? { ...a, ...change } : a));
+    });
+
   return {
     listRaffles: () => raffles.listAll(),
+
+    createAdvisor: (raffleId: string, name: string) => ensureAdvisor(raffleId, name),
+    renameAdvisor: (raffleId: string, id: string, name: string) =>
+      editAdvisor(raffleId, id, { name: advisorNameSchema.parse(name) }).then(() => undefined),
+    setAdvisorActive: (raffleId: string, id: string, active: boolean) =>
+      editAdvisor(raffleId, id, { active }).then(() => undefined),
+
+    /** Asigna a varias órdenes el mismo asesor (crea el asesor si hace falta). Devuelve cuántas cambió. */
+    async assignAdvisor(ctx: AdminContext, orderIds: string[], advisorName: string): Promise<number> {
+      const advisor = await resolveAdvisor(ctx.raffle, advisorName);
+      if (!advisor) return 0;
+      for (const orderId of orderIds) await orders.assignAdvisor(ctx, orderId, advisor);
+      return orderIds.length;
+    },
 
     async createRaffle(values: RaffleFormValues, image: File | null): Promise<string> {
       const raffleId = await raffles.create({ ...values, imageUrl: null });
@@ -199,11 +259,20 @@ export const createAdminUseCases = ({ raffles, orders, submissions, legacy, imag
 
     clearResult: (raffleId: string) => raffles.update(raffleId, { result: null }),
 
-    approveRequest: (ctx: AdminContext, orderId: string) => orders.approve(ctx, orderId),
+    /** `advisorName` es el asesor elegido al aprobar; null deja la orden sin asesor. */
+    async approveRequest(ctx: AdminContext, orderId: string, advisorName: string | null): Promise<void> {
+      await orders.approve(ctx, orderId, await resolveAdvisor(ctx.raffle, advisorName));
+    },
     rejectRequest: (ctx: AdminContext, orderId: string) => orders.reject(ctx, orderId),
     cancelOrder: (ctx: AdminContext, orderId: string) => orders.cancel(ctx, orderId),
-    updateOrderDetails: (ctx: AdminContext, orderId: string, buyer: BuyerFormValues) =>
-      orders.updateDetails(ctx, orderId, { buyer: { name: buyer.name, phone: buyer.phone }, advisor: buyer.advisor }),
+    async updateOrderDetails(ctx: AdminContext, order: Order, buyer: BuyerFormValues): Promise<void> {
+      // Un nombre antiguo sin asignar que no se tocó se deja igual: se resuelve desde "Unificar".
+      const untouchedLegacy = order.advisorId === null && normalizeName(order.advisor ?? '') === (buyer.advisor ?? '');
+      await orders.updateDetails(ctx, order.id, {
+        buyer: { name: buyer.name, phone: buyer.phone },
+        advisor: untouchedLegacy ? undefined : await resolveAdvisor(ctx.raffle, buyer.advisor),
+      });
+    },
 
     async createDirectOrder(
       ctx: AdminContext,
@@ -214,7 +283,7 @@ export const createAdminUseCases = ({ raffles, orders, submissions, legacy, imag
       await orders.createDirect(ctx, {
         numbers: [...input.numbers].sort(),
         buyer: { name: input.buyer.name, phone: input.buyer.phone },
-        advisor: input.buyer.advisor,
+        advisor: await resolveAdvisor(ctx.raffle, input.buyer.advisor),
         payment: input.payment ? await toPayment(ctx.raffle.id, input.payment) : null,
         credentials,
       });

@@ -26,7 +26,7 @@ export interface Writer {
 
 /**
  * Mantiene sincronizadas las vistas derivadas de una orden: el tablero público
- * (estado + alias por número) y el enlace del comprador. Se llama dentro de la misma
+ * (estado + alias + código del asesor por número) y el enlace del comprador. Se llama dentro de la misma
  * transacción que modifica la orden, para que nunca queden desalineadas.
  */
 export const projectOrder = (writer: Writer, raffle: Raffle, order: Order, previous?: Order): void => {
@@ -38,7 +38,8 @@ export const projectOrder = (writer: Writer, raffle: Raffle, order: Order, previ
     previous.numbers.forEach((n) => (tickets[n] = deleteField()));
   }
   if (isOrderHoldingNumbers(order)) {
-    order.numbers.forEach((n) => (tickets[n] = { state: summary.level, alias }));
+    const advisor = order.advisorId ?? deleteField();
+    order.numbers.forEach((n) => (tickets[n] = { state: summary.level, alias, advisor }));
   }
   if (Object.keys(tickets).length > 0) {
     writer.set(refs.board(raffle.id), { tickets, updatedAt: serverTimestamp() }, { merge: true });

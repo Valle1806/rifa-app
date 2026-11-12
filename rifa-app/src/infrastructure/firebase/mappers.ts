@@ -32,6 +32,9 @@ export const toRaffle = (snap: DocumentSnapshot): Raffle => {
     status: d.status ?? (d.isActive === false ? 'closed' : 'active'),
     reservationHours: d.reservationHours ?? DEFAULT_RESERVATION_HOURS,
     createdAt: toMillis(d.createdAt),
+    advisors: Array.isArray(d.advisors)
+      ? d.advisors.map((a: DocumentData) => ({ id: a.id, name: a.name ?? '', active: a.active !== false }))
+      : [],
     result: Array.isArray(d.result?.winners)
       ? {
           winners: d.result.winners.map((w: DocumentData) => ({
@@ -63,6 +66,7 @@ export const toOrder = (snap: DocumentSnapshot, raffleId: string): Order => {
     numbers: d.numbers ?? [],
     buyer: d.buyer ?? { name: '', phone: '' },
     advisor: d.advisor ?? null,
+    advisorId: d.advisorId ?? null,
     status: d.status,
     payments: d.payments ?? [],
     accessToken: d.accessToken,

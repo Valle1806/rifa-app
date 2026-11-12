@@ -7,6 +7,8 @@ export type TicketState = 'available' | 'pending' | PaymentLevel;
 export interface BoardEntry {
   state: PaymentLevel;
   alias: string;
+  /** Código del asesor que vendió el número, si se conoce. */
+  advisor?: string;
 }
 
 export type Board = Record<string, BoardEntry>;

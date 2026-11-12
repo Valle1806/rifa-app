@@ -15,6 +15,7 @@ import {
   formatMoney,
   summarizeOrder,
   toPublicAlias,
+  type AdvisorRef,
   type AuditAction,
   type Order,
   type OrderStatus,
@@ -26,6 +27,7 @@ import { refs } from './paths';
 import { projectOrder, writeAudit } from './projections';
 import { watchQuery } from './watch';
 
+const advisorFields = (ref: AdvisorRef | null) => ({ advisor: ref?.name ?? null, advisorId: ref?.id ?? null });
 
 const readOrder = async (tx: Transaction, ctx: AdminContext, orderId: string, expected?: OrderStatus): Promise<Order> => {
   const snap = await tx.get(refs.order(ctx.raffle.id, orderId));
@@ -131,7 +133,7 @@ export const createOrderRepository = (random: SecureRandom): OrderRepository => 
           raffleId: ctx.raffle.id,
           numbers,
           buyer,
-          advisor,
+          ...advisorFields(advisor),
           status: 'active',
           payments: payment ? [newPayment(payment)] : [],
           accessToken: credentials.token,
@@ -142,7 +144,7 @@ export const createOrderRepository = (random: SecureRandom): OrderRepository => 
         tx.set(orderRef, {
           numbers,
           buyer,
-          advisor,
+          ...advisorFields(advisor),
           status: order.status,
           payments: order.payments,
           accessToken: order.accessToken,
@@ -157,12 +159,13 @@ export const createOrderRepository = (random: SecureRandom): OrderRepository => 
         return orderRef.id;
       }),
 
-    approve: (ctx, orderId) =>
+    approve: (ctx, orderId, advisor) =>
       runTransaction(db, async (tx) => {
         const order = await readOrder(tx, ctx, orderId, 'pending');
         const locks = await assertNumbersFree(tx, ctx, order.numbers, order.id);
-        const next: Order = { ...order, status: 'active' };
-        tx.update(refs.order(ctx.raffle.id, orderId), { status: 'active', updatedAt: serverTimestamp() });
+        const patch = { status: 'active' as const, ...(advisor !== undefined && advisorFields(advisor)) };
+        const next: Order = { ...order, ...patch };
+        tx.update(refs.order(ctx.raffle.id, orderId), { ...patch, updatedAt: serverTimestamp() });
         locks.forEach((l) => tx.delete(refs.lock(ctx.raffle.id, l.number)));
         projectOrder(tx, ctx.raffle, next);
         writeAudit(tx, ctx, 'request_approved', next, `Solicitud de ${order.buyer.name} aprobada`);
@@ -190,12 +193,27 @@ export const createOrderRepository = (random: SecureRandom): OrderRepository => 
       })),
 
     updateDetails: (ctx, orderId, { buyer, advisor }) =>
-      mutateActiveOrder(ctx, orderId, (order) => ({
-        next: { ...order, buyer, advisor },
-        patch: { buyer, advisor },
-        audit: 'order_updated',
-        detail: `Datos de ${buyer.name} actualizados`,
-      })),
+      mutateActiveOrder(ctx, orderId, (order) => {
+        const patch = { buyer, ...(advisor !== undefined && advisorFields(advisor)) };
+        return { next: { ...order, ...patch }, patch, audit: 'order_updated', detail: `Datos de ${buyer.name} actualizados` };
+      }),
+
+    /**
+     * Solo toca el asesor: en la orden y el código en el tablero. No recalcula estados
+     * ni el enlace del comprador, así unificar nombres no puede alterar nada de lo vendido.
+     */
+    assignAdvisor: (ctx, orderId, advisor) =>
+      runTransaction(db, async (tx) => {
+        const order = await readOrder(tx, ctx, orderId, 'active');
+        const board = toBoard(await tx.get(refs.board(ctx.raffle.id)));
+        tx.update(refs.order(ctx.raffle.id, orderId), { ...advisorFields(advisor), updatedAt: serverTimestamp() });
+        // Solo números que ya están en el tablero: nunca crea una entrada a medias (sin estado ni alias).
+        const tickets = Object.fromEntries(order.numbers.filter((n) => board[n]).map((n) => [n, { advisor: advisor.id }]));
+        if (Object.keys(tickets).length > 0) {
+          tx.set(refs.board(ctx.raffle.id), { tickets, updatedAt: serverTimestamp() }, { merge: true });
+        }
+        writeAudit(tx, ctx, 'order_updated', order, `Asesor de ${order.buyer.name}: ${advisor.name}`);
+      }),
 
     addPayment: (ctx, orderId, payment) =>
       mutateActiveOrder(ctx, orderId, (order) => {

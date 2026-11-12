@@ -42,7 +42,7 @@ export const DirectSaleModal = ({ ctx, open, numbers, availability, onClose, onC
           <p className="rounded-2xl bg-indigo-50 border border-indigo-100 p-4 text-sm text-indigo-900">
             <strong>#{numbers.join(', #')}</strong> · total {formatMoney(orderTotal(numbers.length, ctx.raffle.price))}
           </p>
-          <BuyerFields idPrefix="sale" />
+          <BuyerFields idPrefix="sale" advisors={ctx.raffle.advisors} otherAdvisorHint="Se agrega a la lista de asesores al guardar." />
           <PaymentFields idPrefix="sale-pay" amountOptional />
           <Button type="submit" size="lg" fullWidth loading={pending} icon={<HandCoins size={18} />}>
             Asignar

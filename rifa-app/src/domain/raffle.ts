@@ -1,3 +1,4 @@
+import type { Advisor } from './advisor';
 import type { RaffleResult } from './result';
 
 export type RaffleStatus = 'active' | 'closed';
@@ -16,9 +17,11 @@ export interface Raffle {
   createdAt: number;
   /** Se llena cuando el admin publica el número ganador. */
   result: RaffleResult | null;
+  /** Asesores que aparecen en el formulario de compra. */
+  advisors: Advisor[];
 }
 
-export type RaffleDraft = Omit<Raffle, 'id' | 'createdAt' | 'status' | 'result'>;
+export type RaffleDraft = Omit<Raffle, 'id' | 'createdAt' | 'status' | 'result' | 'advisors'>;
 
 export const DIGIT_COUNTS = [2, 3, 4] as const;
 export const DEFAULT_RESERVATION_HOURS = 24;

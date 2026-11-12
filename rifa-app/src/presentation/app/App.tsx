@@ -13,6 +13,7 @@ const AdminDashboardPage = lazy(() => import('../features/admin/AdminDashboardPa
 const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const MyNumbersPage = lazy(() => import('../features/buyer/MyNumbersPage').then((m) => ({ default: m.MyNumbersPage })));
 const WinnerPage = lazy(() => import('../features/public/WinnerPage').then((m) => ({ default: m.WinnerPage })));
+const AdvisorSalesPage = lazy(() => import('../features/advisor/AdvisorSalesPage').then((m) => ({ default: m.AdvisorSalesPage })));
 const FindMyNumbersPage = lazy(() => import('../features/buyer/FindMyNumbersPage').then((m) => ({ default: m.FindMyNumbersPage })));
 
 const withSession = (page: ReactNode) => <SessionProvider>{page}</SessionProvider>;
@@ -28,6 +29,7 @@ export const App = ({ services }: { services: Services }) => (
             <Route path="/r/:raffleId" element={<PublicRafflePage />} />
             <Route path="/r/:raffleId/consultar" element={<FindMyNumbersPage />} />
             <Route path="/r/:raffleId/ganador" element={<WinnerPage />} />
+            <Route path="/r/:raffleId/asesor/:advisorId" element={<AdvisorSalesPage />} />
             <Route path="/mis-numeros/:token" element={<MyNumbersPage />} />
             <Route path="/login" element={withSession(<LoginPage />)} />
             <Route path="/admin" element={adminOnly(<AdminDashboardPage />)} />

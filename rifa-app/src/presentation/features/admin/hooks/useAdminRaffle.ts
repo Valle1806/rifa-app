@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { AdminContext } from '../../../../application/ports';
 import {
+  advisorKey,
   isOrderHoldingNumbers,
   summarizeOrder,
   type AuditEntry,
@@ -24,10 +25,24 @@ export interface OrderRow {
 }
 
 export interface AdvisorStats {
-  name: string;
   numbers: number;
   collected: number;
+  receivable: number;
 }
+
+/** Órdenes activas con el asesor escrito a mano y aún sin asignar a uno registrado. */
+export interface UnassignedAdvisorGroup {
+  /** Como se escribió la primera vez (las variantes de mayúsculas y tildes se agrupan). */
+  label: string;
+  orderIds: string[];
+  numbers: number;
+}
+
+const addSale = (stats: AdvisorStats | undefined, summary: OrderSummary, numbers: number): AdvisorStats => ({
+  numbers: (stats?.numbers ?? 0) + numbers,
+  collected: (stats?.collected ?? 0) + summary.paid,
+  receivable: (stats?.receivable ?? 0) + summary.balance,
+});
 
 /** Todo lo que el panel necesita de una rifa, en tiempo real y ya calculado. */
 export const useAdminRaffle = (raffleId: string | null, actor: string) => {
@@ -54,11 +69,19 @@ export const useAdminRaffle = (raffleId: string | null, actor: string) => {
     const rowByNumber = new Map<string, OrderRow>();
     active.forEach((r) => r.order.numbers.forEach((n) => rowByNumber.set(n, r)));
 
-    const advisors = new Map<string, AdvisorStats>();
+    const advisorStats = new Map<string, AdvisorStats>();
+    const unassigned = new Map<string, UnassignedAdvisorGroup>();
+    let withoutAdvisor = 0;
     active.forEach(({ order, summary }) => {
-      const name = order.advisor ?? 'Sin asesor';
-      const current = advisors.get(name) ?? { name, numbers: 0, collected: 0 };
-      advisors.set(name, { name, numbers: current.numbers + order.numbers.length, collected: current.collected + summary.paid });
+      if (order.advisorId) {
+        advisorStats.set(order.advisorId, addSale(advisorStats.get(order.advisorId), summary, order.numbers.length));
+      } else if (order.advisor) {
+        const key = advisorKey(order.advisor);
+        const group = unassigned.get(key) ?? { label: order.advisor, orderIds: [], numbers: 0 };
+        unassigned.set(key, { ...group, orderIds: [...group.orderIds, order.id], numbers: group.numbers + order.numbers.length });
+      } else {
+        withoutAdvisor += order.numbers.length;
+      }
     });
 
     return {
@@ -69,7 +92,9 @@ export const useAdminRaffle = (raffleId: string | null, actor: string) => {
       ordersById: new Map(rows.map((r) => [r.order.id, r])),
       collected: active.reduce((acc, r) => acc + r.summary.paid, 0),
       receivable: active.reduce((acc, r) => acc + r.summary.balance, 0),
-      advisors: [...advisors.values()].sort((a, b) => b.numbers - a.numbers),
+      advisorStats,
+      unassignedAdvisors: [...unassigned.values()].sort((a, b) => b.numbers - a.numbers),
+      numbersWithoutAdvisor: withoutAdvisor,
     };
   }, [orders.data, submissions.data, board.raffle?.price]);
 

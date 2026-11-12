@@ -1,33 +1,7 @@
-import { ClipboardList, Trophy } from 'lucide-react';
-import { formatMoney, type AuditEntry } from '../../../../domain';
+import { ClipboardList } from 'lucide-react';
+import type { AuditEntry } from '../../../../domain';
 import { formatDateTime } from '../../../shared/format';
 import { EmptyState, Panel } from '../../../shared/ui/Panel';
-import type { AdvisorStats } from '../hooks/useAdminRaffle';
-
-export const AdvisorRanking = ({ advisors }: { advisors: AdvisorStats[] }) => (
-  <Panel title="Asesores" icon={<Trophy size={18} className="text-amber-500" />}>
-    {advisors.length === 0 ? (
-      <EmptyState>Sin ventas registradas</EmptyState>
-    ) : (
-      <ol className="space-y-3">
-        {advisors.map((a, i) => (
-          <li key={a.name} className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="w-7 h-7 shrink-0 rounded-full bg-slate-100 flex items-center justify-center font-black text-slate-500 text-xs">
-                {i + 1}
-              </span>
-              <div className="min-w-0">
-                <p className="font-bold text-slate-800 truncate">{a.name}</p>
-                <p className="text-[11px] text-slate-400 font-bold">{a.numbers} números</p>
-              </div>
-            </div>
-            <span className="font-black text-slate-900 text-sm tabular-nums">{formatMoney(a.collected)}</span>
-          </li>
-        ))}
-      </ol>
-    )}
-  </Panel>
-);
 
 export const AuditFeed = ({ entries }: { entries: AuditEntry[] }) => (
   <Panel title="Historial" icon={<ClipboardList size={18} className="text-slate-400" />}>

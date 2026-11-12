@@ -1,8 +1,9 @@
+import { useMemo, useState } from 'react';
 import { Controller, useFormContext, type FieldError } from 'react-hook-form';
 import type { BuyerFormInput, PaymentFormInput, ProofFormInput } from '../../../application/schemas';
+import { BUYER_RULES, advisorKey, findAdvisorByName, type Advisor } from '../../../domain';
 
 type PaymentSection = Pick<PaymentFormInput, 'method'> & { amount: string | number };
-import { BUYER_RULES } from '../../../domain';
 import { ImagePicker } from '../../shared/ui/ImagePicker';
 import { Field, Select, TextArea, TextInput } from '../../shared/ui/form';
 
@@ -13,7 +14,86 @@ import { Field, Select, TextArea, TextInput } from '../../shared/ui/form';
 
 const message = (error?: FieldError) => error?.message;
 
-export const BuyerFields = ({ idPrefix }: { idPrefix: string }) => {
+const OTHER = '__other__';
+
+/**
+ * Lista de asesores con opción "Otro". Escribe el nombre elegido en `buyer.advisor`;
+ * con "Otro" muestra el campo de texto y el admin decide al aprobar.
+ */
+const AdvisorField = ({ id, advisors, otherHint }: { id: string; advisors: Advisor[]; otherHint?: string }) => {
+  const {
+    register,
+    setValue,
+    getValues,
+    watch,
+    formState: { errors, isDirty },
+  } = useFormContext<{ buyer: BuyerFormInput }>();
+  const error = errors.buyer?.advisor;
+  // Los inactivos no se ofrecen, salvo el que ya tiene la orden que se está editando.
+  const [initialKey] = useState(() => advisorKey(getValues('buyer.advisor') ?? ''));
+  const options = useMemo(
+    () =>
+      advisors
+        .filter((a) => a.active || advisorKey(a.name) === initialKey)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    [advisors, initialKey],
+  );
+  const [otherMode, setOtherMode] = useState(false);
+  const value = watch('buyer.advisor') ?? '';
+  const match = findAdvisorByName(options, value);
+  // Tras un reset del formulario (no "dirty") vuelve a la lista aunque antes se eligiera "Otro".
+  const choice = (otherMode && isDirty) || (value && !match) ? OTHER : (match?.name ?? '');
+
+  const input = (
+    <TextInput
+      id={id}
+      maxLength={BUYER_RULES.advisorMax}
+      placeholder={options.length > 0 ? 'Nombre del asesor' : 'Quién te vendió el número'}
+      invalid={!!error}
+      {...register('buyer.advisor')}
+    />
+  );
+
+  if (options.length === 0) {
+    return (
+      <Field label="Asesor (opcional)" htmlFor={id} error={message(error)}>
+        {input}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label="Asesor (opcional)" htmlFor={`${id}-select`} error={message(error)} hint={choice === OTHER ? otherHint : undefined}>
+      <Select
+        id={`${id}-select`}
+        value={choice}
+        onChange={(event) => {
+          const next = event.target.value;
+          setOtherMode(next === OTHER);
+          setValue('buyer.advisor', next === OTHER ? '' : next, { shouldValidate: true, shouldDirty: true });
+        }}
+      >
+        <option value="">Sin asesor / no sé</option>
+        {options.map((a) => (
+          <option key={a.id} value={a.name}>
+            {a.name}
+          </option>
+        ))}
+        <option value={OTHER}>Otro…</option>
+      </Select>
+      {choice === OTHER && input}
+    </Field>
+  );
+};
+
+interface BuyerFieldsProps {
+  idPrefix: string;
+  advisors: Advisor[];
+  /** Ayuda bajo "Otro": en el público se aprueba después; en el panel se crea al guardar. */
+  otherAdvisorHint?: string;
+}
+
+export const BuyerFields = ({ idPrefix, advisors, otherAdvisorHint }: BuyerFieldsProps) => {
   const {
     register,
     formState: { errors },
@@ -37,15 +117,7 @@ export const BuyerFields = ({ idPrefix }: { idPrefix: string }) => {
           {...register('buyer.phone')}
         />
       </Field>
-      <Field label="Asesor (opcional)" htmlFor={id('advisor')} error={message(e?.advisor)}>
-        <TextInput
-          id={id('advisor')}
-          maxLength={BUYER_RULES.advisorMax}
-          placeholder="Quién te vendió el número"
-          invalid={!!e?.advisor}
-          {...register('buyer.advisor')}
-        />
-      </Field>
+      <AdvisorField id={id('advisor')} advisors={advisors} otherHint={otherAdvisorHint} />
     </div>
   );
 };

@@ -51,6 +51,12 @@ export const buyerSchema = z.object({
 export type BuyerFormInput = z.input<typeof buyerSchema>;
 export type BuyerFormValues = z.output<typeof buyerSchema>;
 
+/** Nombre de un asesor al crearlo o renombrarlo desde el panel. */
+export const advisorNameSchema = z
+  .string()
+  .transform(normalizeName)
+  .pipe(z.string().min(2, 'Escribe el nombre del asesor').max(BUYER_RULES.advisorMax, `Máximo ${BUYER_RULES.advisorMax} caracteres`));
+
 export const numbersSchema = z
   .array(z.string())
   .min(1, 'Elige al menos un número')

@@ -1,4 +1,6 @@
 import type {
+  Advisor,
+  AdvisorRef,
   AuditEntry,
   Board,
   Buyer,
@@ -43,6 +45,8 @@ export interface RaffleRepository {
   watch(raffleId: string): Watch<Raffle | null>;
   create(draft: RaffleDraft): Promise<string>;
   update(raffleId: string, patch: RafflePatch): Promise<void>;
+  /** Lee y reescribe la lista de asesores en una transacción, para no pisar cambios simultáneos. */
+  updateAdvisors(raffleId: string, change: (current: Advisor[]) => Advisor[]): Promise<Advisor[]>;
   remove(raffleId: string): Promise<void>;
 }
 
@@ -84,12 +88,15 @@ export interface OrderRepository {
   submitPublicRequest(command: PublicRequestCommand): Promise<string>;
   createDirect(
     ctx: AdminContext,
-    input: { numbers: string[]; buyer: Buyer; advisor: string | null; payment: NewPayment | null; credentials: AccessCredentials },
+    input: { numbers: string[]; buyer: Buyer; advisor: AdvisorRef | null; payment: NewPayment | null; credentials: AccessCredentials },
   ): Promise<string>;
-  approve(ctx: AdminContext, orderId: string): Promise<void>;
+  /** `advisor` asigna el asesor al aprobar; sin él, la orden conserva lo que trae. */
+  approve(ctx: AdminContext, orderId: string, advisor?: AdvisorRef | null): Promise<void>;
   reject(ctx: AdminContext, orderId: string): Promise<void>;
   cancel(ctx: AdminContext, orderId: string): Promise<void>;
-  updateDetails(ctx: AdminContext, orderId: string, details: { buyer: Buyer; advisor: string | null }): Promise<void>;
+  /** `advisor` sin definir deja el asesor como está. */
+  updateDetails(ctx: AdminContext, orderId: string, details: { buyer: Buyer; advisor?: AdvisorRef | null }): Promise<void>;
+  assignAdvisor(ctx: AdminContext, orderId: string, advisor: AdvisorRef): Promise<void>;
   addPayment(ctx: AdminContext, orderId: string, payment: NewPayment): Promise<void>;
   removePayment(ctx: AdminContext, orderId: string, paymentId: string): Promise<void>;
 }

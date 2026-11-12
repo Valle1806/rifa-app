@@ -1,13 +1,14 @@
 import { Check, Image as ImageIcon, Inbox, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AdminContext } from '../../../../application/ports';
-import { formatMoney, type PaymentSubmission } from '../../../../domain';
+import { activeAdvisors, findAdvisorByName, formatMoney, type PaymentSubmission } from '../../../../domain';
 import { formatDateTime } from '../../../shared/format';
 import { useAsyncAction } from '../../../shared/hooks/useAsyncAction';
 import { useServices } from '../../../shared/services';
 import { Badge } from '../../../shared/ui/Badge';
 import { Button } from '../../../shared/ui/Button';
 import { ConfirmDialog } from '../../../shared/ui/ConfirmDialog';
+import { Select } from '../../../shared/ui/form';
 import { EmptyState, Panel } from '../../../shared/ui/Panel';
 import type { OrderRow } from '../hooks/useAdminRaffle';
 import { SubmissionReviewModal } from './SubmissionReviewModal';
@@ -23,6 +24,11 @@ const RequestItem = ({ ctx, row, onReject }: { ctx: AdminContext; row: OrderRow;
   const { admin } = useServices();
   const { pending, run } = useAsyncAction();
   const { order, summary, pendingProofs } = row;
+  const known = findAdvisorByName(ctx.raffle.advisors, order.advisor);
+  const isNewAdvisor = !!order.advisor && !known;
+  // Asesor escrito en "Otro": por defecto se agrega a la lista; el admin puede corregirlo.
+  const [advisorChoice, setAdvisorChoice] = useState<string>(order.advisor ?? '');
+  const advisorToApply = isNewAdvisor ? advisorChoice || null : (known?.name ?? null);
 
   return (
     <li className="rounded-2xl border border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -30,8 +36,29 @@ const RequestItem = ({ ctx, row, onReject }: { ctx: AdminContext; row: OrderRow;
         <p className="font-bold text-slate-900 truncate">{order.buyer.name}</p>
         <p className="text-xs text-slate-500">
           {order.buyer.phone} · {formatDateTime(order.createdAt)}
-          {order.advisor && ` · Asesor: ${order.advisor}`}
+          {known && ` · Asesor: ${known.name}`}
         </p>
+        {isNewAdvisor && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 space-y-1.5">
+            <label htmlFor={`advisor-${order.id}`} className="block text-xs font-bold text-amber-900">
+              Asesor nuevo: «{order.advisor}»
+            </label>
+            <Select
+              id={`advisor-${order.id}`}
+              className="py-2 text-sm bg-white"
+              value={advisorChoice}
+              onChange={(e) => setAdvisorChoice(e.target.value)}
+            >
+              <option value={order.advisor ?? ''}>Agregar «{order.advisor}» como asesor</option>
+              {activeAdvisors(ctx.raffle.advisors).map((a) => (
+                <option key={a.id} value={a.name}>
+                  Es {a.name}
+                </option>
+              ))}
+              <option value="">Sin asesor</option>
+            </Select>
+          </div>
+        )}
         <p className="text-sm">
           <span className="font-black text-indigo-700">#{order.numbers.join(', #')}</span>{' '}
           <span className="text-slate-500">({formatMoney(summary.total)})</span>
@@ -47,7 +74,7 @@ const RequestItem = ({ ctx, row, onReject }: { ctx: AdminContext; row: OrderRow;
           size="sm"
           loading={pending}
           icon={<Check size={14} />}
-          onClick={() => run(() => admin.approveRequest(ctx, order.id), `Números de ${order.buyer.name} aprobados`)}
+          onClick={() => run(() => admin.approveRequest(ctx, order.id, advisorToApply), `Números de ${order.buyer.name} aprobados`)}
         >
           Aprobar
         </Button>

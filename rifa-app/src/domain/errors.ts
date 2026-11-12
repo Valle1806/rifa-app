@@ -4,7 +4,8 @@ export type DomainErrorCode =
   | 'INVALID_NUMBERS'
   | 'ORDER_NOT_PENDING'
   | 'NOT_FOUND'
-  | 'INVALID_FILE';
+  | 'INVALID_FILE'
+  | 'DUPLICATE_ADVISOR';
 
 /** Error de negocio con un mensaje apto para mostrar al usuario. */
 export class DomainError extends Error {

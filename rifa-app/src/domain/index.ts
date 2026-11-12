@@ -1,4 +1,5 @@
 export * from './access';
+export * from './advisor';
 export * from './audit';
 export * from './buyer';
 export * from './errors';
